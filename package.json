@@ -6,9 +6,13 @@
     "node": "24.19.0",
     "npm": "11.17.0"
   },
-  "workspaces": ["crates/products/agent-tools/tools/typescript"],
+  "workspaces": [
+    "clients/elixir/wt_api",
+    "crates/products/agent-tools/tools/typescript"
+  ],
   "scripts": {
-    "check:typescript": "npm run check --workspaces"
+    "check:typescript": "npm run check --workspaces",
+    "generate:elixir-client": "npm run generate --workspace @wt/elixir-api-contract"
   },
   "devDependencies": {
     "prettier": "3.6.2",

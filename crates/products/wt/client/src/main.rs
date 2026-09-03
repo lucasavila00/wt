@@ -1,4 +1,6 @@
 use anyhow::{bail, Context as _, Result};
+#[cfg(test)]
+use clap::CommandFactory as _;
 use clap::{Parser, Subcommand};
 use std::fmt::Write as _;
 use std::io::Write;
@@ -21,6 +23,12 @@ mod reports;
 mod shell;
 
 const TEST_SERVER_WARNING: &str = "WARNING: WT E2E TEST SERVER — test fixtures are installed.";
+#[cfg(test)]
+const API_TYPESCRIPT_CONTRACT: &str = include_str!("../../../../../clients/elixir/wt_api/api.ts");
+const API_HELP: &str = concat!(
+    "CANONICAL TYPESCRIPT CONTRACT:\n\n",
+    include_str!("../../../../../clients/elixir/wt_api/api.ts")
+);
 #[cfg(test)]
 use git_author::{parse_git_config_value, required_git_config_error};
 
@@ -60,6 +68,7 @@ enum Command {
     /// Read durable messages sent by worlds.
     Messages,
     /// Read one versioned JSON API request from standard input.
+    #[command(after_long_help = API_HELP)]
     Api,
     /// Show client and configured server build identities.
     Diagnostics,

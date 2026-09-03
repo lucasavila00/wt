@@ -1,0 +1,16 @@
+{
+  "name": "@wt/elixir-api-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "beff": "beff -p beff.json",
+    "check": "tsc --project tsconfig.json && prettier --check api.ts parser.ts generate.mjs beff.json tsconfig.json package.json",
+    "generate": "npm run beff && node --experimental-strip-types generate.mjs"
+  },
+  "dependencies": {
+    "@beff/client": "0.0.152"
+  },
+  "devDependencies": {
+    "@beff/cli": "0.0.152"
+  }
+}

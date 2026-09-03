@@ -21,6 +21,12 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      - name: Install Erlang and Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "29.0.5"
+          elixir-version: "1.20.2"
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -31,6 +37,12 @@ jobs:
         run: |
           npm install --global npm@11.17.0
           npm ci
+
+      - name: Install Elixir dependencies
+        working-directory: clients/elixir/wt_api
+        run: |
+          mix local.hex --force
+          mix deps.get --check-locked
 
       - name: Run checks
         run: make ci

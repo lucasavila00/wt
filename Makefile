@@ -25,6 +25,11 @@ check-file-lines:
 	done; \
 	test -z "$$failed"; }
 
+check-elixir-client:
+	npm run generate:elixir-client
+	git diff --exit-code -- clients/elixir/wt_api/generated clients/elixir/wt_api/wt_api.schema.json clients/elixir/wt_api/lib/wt_api/generated.ex
+	cd clients/elixir/wt_api && mix format --check-formatted
+
 check-install-checkout:
 	scripts/test-require-clean-checkout
 
@@ -69,7 +74,12 @@ shell:
 check-typescript:
 	npm run check:typescript
 
-ci: static
+test-elixir-client: check-elixir-client
+	cargo build -p wt-client --bin wt
+	cd clients/elixir/wt_api && mix deps.get --check-locked
+	cd clients/elixir/wt_api && WT_API_TEST_WT="$(CURDIR)/target/debug/wt" mix test
+
+ci: static test-elixir-client
 	cargo test --workspace --locked
 
 static: check-crate-readmes check-file-lines check-install-checkout check-snapshot-lines check-typescript
