@@ -419,6 +419,48 @@ fn api_controls_an_ephemeral_codex_session() {
         serde_json::to_value(uncertain).unwrap(),
         serde_json::to_value(replay).unwrap()
     );
+
+    // Lose the result at the real SQLite boundary after the guest operation returns.
+    use diesel::{Connection, RunQueryDsl};
+    let path = temp.path().join("instances.db");
+    let mut database = diesel::SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    diesel::sql_query("CREATE TRIGGER reject_api_result BEFORE UPDATE OF response_json ON api_mutation_results BEGIN SELECT RAISE(FAIL, 'result storage unavailable'); END")
+        .execute(&mut database).unwrap();
+    let lost_id = uuid::Uuid::new_v4();
+    let lost = service.execute_api_mutation(
+        "owner",
+        lost_id,
+        Some(&"e".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(lost.outcome, Outcome::Error { error }
+        if error.code == ErrorCode::Internal && !error.retryable));
+    diesel::sql_query("DROP TRIGGER reject_api_result")
+        .execute(&mut database)
+        .unwrap();
+    drop(service);
+    let reopened = Store::open(&path).unwrap();
+    // Startup cleanup may release ordinary world operations, but not uncertain Codex work.
+    reopened.clear_incomplete_api_mutations().unwrap();
+    let service = test_service(reopened);
+    let replay = service.execute_api_mutation(
+        "owner",
+        lost_id,
+        Some(&"e".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(replay.outcome, Outcome::Error { error }
+        if error.code == ErrorCode::Conflict && error.message == "request is still in progress"));
 }
 
 #[test]

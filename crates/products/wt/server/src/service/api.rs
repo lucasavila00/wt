@@ -81,10 +81,17 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             ))
             .with_request_metadata(request_id, server_id, None);
         };
-        match self
-            .store
-            .begin_api_mutation(owner, request_id, request_hash)
-        {
+        match self.store.begin_api_mutation(
+            owner,
+            request_id,
+            request_hash,
+            matches!(
+                operation,
+                Operation::StartCodex { .. }
+                    | Operation::ResumeCodex { .. }
+                    | Operation::SendCodexMessage { .. }
+            ),
+        ) {
             Ok(wt_workload_registry::ApiMutationStart::Replay {
                 response_json,
                 expires_at_unix_ms,

@@ -7,6 +7,7 @@ diesel::table! {
         request_hash -> Text,
         response_json -> Nullable<Text>,
         expires_at_unix_ms -> BigInt,
+        preserve_on_restart -> Bool,
     }
 }
 

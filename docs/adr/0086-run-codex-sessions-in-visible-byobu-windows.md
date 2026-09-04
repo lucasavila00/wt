@@ -61,6 +61,9 @@ restart. Missing thread history is an error, never an implicit replacement conve
 Start/send carry mutation hashes like other writes. An uncertain guest failure is cached as
 nonretryable: Codex may have accepted work before the response was lost. Inspect and reconcile
 before submitting new work; changing the request ID is not an automatic retry strategy.
+Codex reservations survive server startup cleanup if saving the response failed or the server
+crashed. Replaying such an unresolved request cannot resubmit work; reconcile through inspection
+and mail. This protection has the API's existing 30-day request-retention window.
 
 The controller retains its durable association between its task or sub-session and the Codex
 thread ID. The WT registry stores world resources and mailbox entries.
