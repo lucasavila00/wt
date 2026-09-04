@@ -55,6 +55,9 @@ impl Runtime {
                             } else {
                                 let result = match request["method"].as_str().unwrap() {
                                     "initialize" => json!({}),
+                                    "thread/start" => {
+                                        json!({"thread":{"id":"thread-1","historyMode":"legacy"}})
+                                    }
                                     "thread/read" | "thread/resume" => json!({"thread": {
                                         "id": "thread-1", "status": {"type": "idle"}, "turns": []
                                     }}),
@@ -106,9 +109,12 @@ impl Runtime {
     }
 
     fn run(&self, operation: &str, thread: &str, message: Option<&str>) -> Output {
-        let mut child = self
-            .command(env!("CARGO_BIN_EXE_wt-codex-integration"))
-            .args([operation, thread])
+        let mut command = self.command(env!("CARGO_BIN_EXE_wt-codex-integration"));
+        command.arg(operation);
+        if operation != "runtime-start" {
+            command.arg(thread);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -134,6 +140,42 @@ impl Runtime {
         );
         serde_json::from_slice(&output.stdout).unwrap()
     }
+}
+
+#[test]
+fn new_thread_is_tracked_before_submission_without_reading_unmaterialized_history() {
+    let runtime = Runtime::new();
+    // No Codex TUI executable and no tmux server: semantic startup must still succeed.
+    let output = runtime.run("runtime-start", "", Some("work"));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let started: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(started["thread_id"], "thread-1");
+    assert_eq!(started["turn_id"], "turn-2");
+    assert!(started["pane_id"].is_null());
+    let requests = runtime.requests.lock().unwrap();
+    let start = requests
+        .iter()
+        .find(|request| request["method"] == "thread/start")
+        .unwrap();
+    assert_eq!(start["params"]["historyMode"], "legacy");
+    assert!(!requests
+        .iter()
+        .any(|request| request["method"] == "thread/read" || request["method"] == "thread/resume"));
+    let files = fs::read_dir(runtime.root.path().join(".local/state/wt/codex/threads")).unwrap();
+    let tracking = files
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .unwrap();
+    let tracked: Value = serde_json::from_slice(&fs::read(tracking).unwrap()).unwrap();
+    assert_eq!(tracked["thread_id"], "thread-1");
+    assert_eq!(tracked["settled"], json!([]));
 }
 
 impl Drop for Runtime {
