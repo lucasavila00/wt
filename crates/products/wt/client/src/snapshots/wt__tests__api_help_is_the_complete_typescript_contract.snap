@@ -63,6 +63,16 @@ export type InspectCodexRequest = {
   thread_id: string;
 };
 
+export type ResumeCodexRequest = {
+  api_version: 1;
+  request_id: Uuid;
+  expected_server_id?: Uuid;
+  context: string;
+  operation: "resume_codex";
+  world_id: Uuid;
+  thread_id: string;
+};
+
 export type SendCodexMessageRequest = {
   api_version: 1;
   request_id: Uuid;
@@ -90,6 +100,7 @@ export type Request =
   | DeleteWorldRequest
   | StartCodexRequest
   | InspectCodexRequest
+  | ResumeCodexRequest
   | SendCodexMessageRequest
   | ReadWorldMailRequest;
 
