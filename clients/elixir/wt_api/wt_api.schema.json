@@ -10,13 +10,17 @@
     }
   ],
   "$defs": {
-    "UnsignedInteger": {
+    "UInt64": {
       "type": "number",
-      "format": "unsigned-integer"
+      "format": "uint64"
     },
     "Uuid": {
       "type": "string",
       "format": "uuid"
+    },
+    "UInt32": {
+      "type": "number",
+      "format": "uint32"
     },
     "CreateWorldRequest": {
       "type": "object",
@@ -31,7 +35,7 @@
           "type": "string"
         },
         "disk_gib": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "expected_server_id": {
           "$ref": "#/$defs/Uuid"
@@ -43,7 +47,7 @@
           "type": "string"
         },
         "memory_mib": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "name": {
           "type": "string"
@@ -58,7 +62,7 @@
           "$ref": "#/$defs/Uuid"
         },
         "vcpus": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt32"
         }
       },
       "required": [
@@ -157,7 +161,7 @@
       "type": "object",
       "properties": {
         "after_message_id": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "api_version": {
           "type": "number",
@@ -172,7 +176,7 @@
           "$ref": "#/$defs/Uuid"
         },
         "limit": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt32"
         },
         "operation": {
           "type": "string",
@@ -318,10 +322,6 @@
         }
       ]
     },
-    "Integer": {
-      "type": "number",
-      "format": "integer"
-    },
     "CapacityDetails": {
       "type": "object",
       "properties": {
@@ -332,10 +332,10 @@
           ]
         },
         "requested": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "reserved": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "resource": {
           "type": "string",
@@ -346,7 +346,7 @@
           ]
         },
         "total": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         }
       },
       "required": [
@@ -381,24 +381,48 @@
       ],
       "additionalProperties": false
     },
-    "DiscriminatedOutcomeError1179426074": {
+    "Int64": {
+      "type": "number",
+      "format": "int64"
+    },
+    "ErrorResponse": {
       "type": "object",
       "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
         "error": {
           "$ref": "#/$defs/Error"
+        },
+        "expires_at_unix_ms": {
+          "$ref": "#/$defs/Int64"
         },
         "outcome": {
           "type": "string",
           "enum": [
             "error"
           ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "server_id": {
+          "$ref": "#/$defs/Uuid"
         }
       },
       "required": [
+        "api_version",
         "error",
         "outcome"
       ],
       "additionalProperties": false
+    },
+    "UInt16": {
+      "type": "number",
+      "format": "uint16"
     },
     "SshAccess": {
       "type": "object",
@@ -413,7 +437,7 @@
           }
         },
         "port": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt16"
         },
         "user": {
           "type": "string"
@@ -431,7 +455,7 @@
       "type": "object",
       "properties": {
         "disk_gib": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "guest_ip": {
           "type": "string"
@@ -440,7 +464,7 @@
           "type": "string"
         },
         "memory_mib": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "name": {
           "type": "string"
@@ -459,7 +483,7 @@
           ]
         },
         "vcpus": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt32"
         },
         "world_id": {
           "$ref": "#/$defs/Uuid"
@@ -506,7 +530,7 @@
           "type": "string"
         },
         "observed_at_unix_ms": {
-          "$ref": "#/$defs/Integer"
+          "$ref": "#/$defs/Int64"
         },
         "pane_id": {
           "type": "string"
@@ -543,7 +567,7 @@
       "type": "object",
       "properties": {
         "created_at_unix_ms": {
-          "$ref": "#/$defs/Integer"
+          "$ref": "#/$defs/Int64"
         },
         "kind": {
           "type": "string",
@@ -554,7 +578,7 @@
           ]
         },
         "message_id": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "pane_id": {
           "type": "string"
@@ -585,7 +609,7 @@
       "type": "object",
       "properties": {
         "high_water_message_id": {
-          "$ref": "#/$defs/UnsignedInteger"
+          "$ref": "#/$defs/UInt64"
         },
         "messages": {
           "type": "array",
@@ -670,68 +694,58 @@
         }
       ]
     },
-    "DiscriminatedOutcomeOk1179426074": {
+    "SuccessResponse": {
       "type": "object",
       "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
+        "expires_at_unix_ms": {
+          "$ref": "#/$defs/Int64"
+        },
         "outcome": {
           "type": "string",
           "enum": [
             "ok"
           ]
         },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        },
         "result": {
           "$ref": "#/$defs/Result"
+        },
+        "server_id": {
+          "$ref": "#/$defs/Uuid"
         }
       },
       "required": [
+        "api_version",
         "outcome",
-        "result"
+        "request_id",
+        "result",
+        "server_id"
       ],
       "additionalProperties": false
     },
     "Response": {
-      "allOf": [
+      "type": "object",
+      "discriminator": {
+        "propertyName": "outcome",
+        "mapping": {
+          "error": "#/$defs/ErrorResponse",
+          "ok": "#/$defs/SuccessResponse"
+        }
+      },
+      "oneOf": [
         {
-          "type": "object",
-          "properties": {
-            "api_version": {
-              "type": "number",
-              "enum": [
-                1
-              ]
-            },
-            "expires_at_unix_ms": {
-              "$ref": "#/$defs/Integer"
-            },
-            "request_id": {
-              "$ref": "#/$defs/Uuid"
-            },
-            "server_id": {
-              "$ref": "#/$defs/Uuid"
-            }
-          },
-          "required": [
-            "api_version"
-          ],
-          "additionalProperties": false
+          "$ref": "#/$defs/ErrorResponse"
         },
         {
-          "type": "object",
-          "discriminator": {
-            "propertyName": "outcome",
-            "mapping": {
-              "error": "#/$defs/DiscriminatedOutcomeError1179426074",
-              "ok": "#/$defs/DiscriminatedOutcomeOk1179426074"
-            }
-          },
-          "oneOf": [
-            {
-              "$ref": "#/$defs/DiscriminatedOutcomeError1179426074"
-            },
-            {
-              "$ref": "#/$defs/DiscriminatedOutcomeOk1179426074"
-            }
-          ]
+          "$ref": "#/$defs/SuccessResponse"
         }
       ]
     }

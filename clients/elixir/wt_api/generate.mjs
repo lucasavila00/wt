@@ -55,15 +55,15 @@ const descriptor = (fieldSchema) => {
   if (fieldSchema.$ref) {
     const name = refName(fieldSchema.$ref);
     if (name === "Uuid") return ":uuid";
-    if (name === "Integer") return ":integer";
-    if (name === "UnsignedInteger") return ":unsigned_integer";
+    if (name === "Int64") return ":integer";
+    if (["UInt16", "UInt32", "UInt64"].includes(name)) return `:${name.toLowerCase()}`;
     return `{:struct, ${moduleName(name)}}`;
   }
   if (fieldSchema.enum?.length === 1) return `{:const, ${JSON.stringify(fieldSchema.enum[0])}}`;
   if (fieldSchema.enum) return `{:enum, ${inspectList(fieldSchema.enum)}}`;
   if (fieldSchema.type === "string") return ":string";
-  if (fieldSchema.format === "integer") return ":integer";
-  if (fieldSchema.format === "unsigned-integer") return ":unsigned_integer";
+  if (fieldSchema.format === "int64") return ":integer";
+  if (["uint16", "uint32", "uint64"].includes(fieldSchema.format)) return `:${fieldSchema.format}`;
   if (fieldSchema.type === "number") return ":number";
   if (fieldSchema.type === "boolean") return ":boolean";
   if (fieldSchema.type === "array") return `{:list, ${descriptor(fieldSchema.items)}}`;
@@ -76,13 +76,13 @@ const typeSpec = (fieldSchema) => {
   if (fieldSchema.$ref) {
     const name = refName(fieldSchema.$ref);
     if (name === "Uuid") return "String.t()";
-    if (name === "Integer") return "integer()";
-    if (name === "UnsignedInteger") return "non_neg_integer()";
+    if (name === "Int64") return "integer()";
+    if (["UInt16", "UInt32", "UInt64"].includes(name)) return "non_neg_integer()";
     return `${moduleName(name)}.t()`;
   }
   if (fieldSchema.type === "string") return "String.t()";
-  if (fieldSchema.format === "integer") return "integer()";
-  if (fieldSchema.format === "unsigned-integer") return "non_neg_integer()";
+  if (fieldSchema.format === "int64") return "integer()";
+  if (["uint16", "uint32", "uint64"].includes(fieldSchema.format)) return "non_neg_integer()";
   if (fieldSchema.type === "number") return "number()";
   if (fieldSchema.type === "boolean") return "boolean()";
   if (fieldSchema.type === "array") return `[${typeSpec(fieldSchema.items)}]`;
@@ -171,7 +171,9 @@ defmodule WtApi.Generated.Decoder do
 
   defp decode_value(value, :string) when is_binary(value), do: {:ok, value}
   defp decode_value(value, :integer) when is_integer(value), do: {:ok, value}
-  defp decode_value(value, :unsigned_integer) when is_integer(value) and value >= 0, do: {:ok, value}
+  defp decode_value(value, :uint16) when is_integer(value) and value in 0..65_535, do: {:ok, value}
+  defp decode_value(value, :uint32) when is_integer(value) and value in 0..4_294_967_295, do: {:ok, value}
+  defp decode_value(value, :uint64) when is_integer(value) and value in 0..18_446_744_073_709_551_615, do: {:ok, value}
   defp decode_value(value, :number) when is_number(value), do: {:ok, value}
   defp decode_value(value, :boolean) when is_boolean(value), do: {:ok, value}
   defp decode_value(value, {:const, expected}) when value == expected, do: {:ok, value}

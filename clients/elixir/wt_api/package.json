@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "beff": "beff -p beff.json",
-    "check": "tsc --project tsconfig.json && prettier --check api.ts parser.ts generate.mjs beff.json tsconfig.json package.json",
-    "generate": "npm run beff && node --experimental-strip-types generate.mjs"
+    "check": "tsc --project tsconfig.json && prettier --check api.ts parser.ts generate.mjs generate-rust.mjs beff.json tsconfig.json package.json",
+    "generate": "npm run beff && node --experimental-strip-types generate.mjs && node generate-rust.mjs"
   },
   "dependencies": {
     "@beff/client": "0.0.152"

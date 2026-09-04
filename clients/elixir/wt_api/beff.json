@@ -9,10 +9,16 @@
   ],
   "numberFormats": [
     {
-      "name": "Integer"
+      "name": "Int64"
     },
     {
-      "name": "UnsignedInteger"
+      "name": "UInt16"
+    },
+    {
+      "name": "UInt32"
+    },
+    {
+      "name": "UInt64"
     }
   ]
 }

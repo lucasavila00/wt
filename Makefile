@@ -27,7 +27,7 @@ check-file-lines:
 
 check-elixir-client:
 	npm run generate:elixir-client
-	git diff --exit-code -- clients/elixir/wt_api/generated clients/elixir/wt_api/wt_api.schema.json clients/elixir/wt_api/lib/wt_api/generated.ex
+	git diff --exit-code -- clients/elixir/wt_api/generated clients/elixir/wt_api/wt_api.schema.json clients/elixir/wt_api/lib/wt_api/generated.ex crates/products/wt/client/src/api/generated.rs
 	cd clients/elixir/wt_api && mix format --check-formatted
 
 check-install-checkout:

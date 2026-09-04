@@ -41,8 +41,9 @@ file participates in transport. Failures are returned as `WtApi.TransportError`,
 ## Contract generation
 
 [`api.ts`](api.ts) is the canonical API contract. Beff turns it into
-[`wt_api.schema.json`](wt_api.schema.json), then `generate.mjs` produces the
-checked-in Elixir request, result, and decoder modules.
+[`wt_api.schema.json`](wt_api.schema.json), then the package generators produce
+the checked-in Elixir request, result, and decoder modules and WT's Rust wire
+types.
 
 From the WT repository root:
 

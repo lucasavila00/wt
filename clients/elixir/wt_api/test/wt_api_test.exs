@@ -235,6 +235,38 @@ defmodule WtApiTest do
              })
   end
 
+  test "generated integer decoders preserve wire widths" do
+    request = %{
+      "api_version" => 1,
+      "request_id" => @request_id,
+      "context" => "ars",
+      "operation" => "create_world",
+      "name" => "agent-1",
+      "vcpus" => 4_294_967_295,
+      "memory_mib" => 18_446_744_073_709_551_615,
+      "disk_gib" => 18_446_744_073_709_551_615,
+      "git_user_name" => "Ada Lovelace",
+      "git_user_email" => "ada@example.com"
+    }
+
+    assert {:ok, %Request.CreateWorld{}} = Request.CreateWorld.decode(request)
+
+    assert {:error, "invalid vcpus: unexpected type"} =
+             Request.CreateWorld.decode(%{request | "vcpus" => 4_294_967_296})
+
+    assert {:error, "invalid memory_mib: unexpected type"} =
+             Request.CreateWorld.decode(%{
+               request
+               | "memory_mib" => 18_446_744_073_709_551_616
+             })
+
+    ssh = %{"host" => "192.0.2.2", "host_keys" => [], "port" => 65_535, "user" => "wt"}
+    assert {:ok, %WtApi.SshAccess{port: 65_535}} = WtApi.SshAccess.decode(ssh)
+
+    assert {:error, "invalid port: unexpected type"} =
+             WtApi.SshAccess.decode(%{ssh | "port" => 65_536})
+  end
+
   defp fake_wts_script do
     ~S"""
     #!/bin/sh

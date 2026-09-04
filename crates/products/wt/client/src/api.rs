@@ -1,5 +1,4 @@
 use anyhow::{bail, Context as _, Result};
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::io::{Read as _, Write as _};
 use uuid::Uuid;
@@ -8,99 +7,59 @@ use wt_control_protocol::{
     WorldStatus,
 };
 
-mod request;
-use request::Request;
+mod generated;
+use generated::*;
 #[cfg(test)]
 mod tests;
 
 const API_VERSION: u32 = 1;
 const MAX_REQUEST_BYTES: u64 = 128 * 1024 * 1024;
 
-#[derive(Debug, Serialize)]
-struct ApiResponse {
-    api_version: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    request_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    server_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    expires_at_unix_ms: Option<i64>,
-    #[serde(flatten)]
-    outcome: ApiOutcome,
-}
+impl Request {
+    fn api_version(&self) -> u32 {
+        match self {
+            Self::CreateWorld { api_version, .. }
+            | Self::DeleteWorld { api_version, .. }
+            | Self::StartCodex { api_version, .. }
+            | Self::InspectCodex { api_version, .. }
+            | Self::SendCodexMessage { api_version, .. }
+            | Self::ReadWorldMail { api_version, .. } => *api_version,
+        }
+    }
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "outcome", rename_all = "snake_case")]
-enum ApiOutcome {
-    Ok { result: ApiResult },
-    Error { error: ApiError },
-}
+    fn request_id(&self) -> &str {
+        match self {
+            Self::CreateWorld { request_id, .. }
+            | Self::DeleteWorld { request_id, .. }
+            | Self::StartCodex { request_id, .. }
+            | Self::InspectCodex { request_id, .. }
+            | Self::SendCodexMessage { request_id, .. }
+            | Self::ReadWorldMail { request_id, .. } => request_id,
+        }
+    }
 
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-enum ApiResult {
-    World {
-        world: ApiWorld,
-    },
-    WorldDeleted {
-        world_id: String,
-    },
-    CodexStarted {
-        thread_id: String,
-        turn_id: String,
-        pane_id: String,
-        window_name: String,
-    },
-    CodexInspection {
-        thread_id: String,
-        status: ApiCodexStatus,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        active_turn_id: Option<String>,
-        pane_id: String,
-        window_name: String,
-        screen: String,
-        observed_at_unix_ms: i64,
-    },
-    CodexMessageSent {
-        thread_id: String,
-        turn_id: String,
-        delivery: ApiCodexMessageDelivery,
-    },
-    WorldMail {
-        messages: Vec<ApiWorldMail>,
-        high_water_message_id: u64,
-    },
-}
-
-#[derive(Debug, Serialize)]
-struct ApiWorldMail {
-    message_id: u64,
-    world_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    thread_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    turn_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pane_id: Option<String>,
-    created_at_unix_ms: i64,
-    kind: ApiMailKind,
-    text: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ApiMailKind {
-    Message,
-    Completed,
-    Failed,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ApiCodexStatus {
-    Active,
-    Idle,
-    Error,
+    fn expected_server_id(&self) -> Option<&str> {
+        match self {
+            Self::CreateWorld {
+                expected_server_id, ..
+            }
+            | Self::DeleteWorld {
+                expected_server_id, ..
+            }
+            | Self::StartCodex {
+                expected_server_id, ..
+            }
+            | Self::InspectCodex {
+                expected_server_id, ..
+            }
+            | Self::SendCodexMessage {
+                expected_server_id, ..
+            }
+            | Self::ReadWorldMail {
+                expected_server_id, ..
+            } => expected_server_id.as_deref(),
+        }
+    }
 }
 
 impl From<wt_control_protocol::CodexStatus> for ApiCodexStatus {
@@ -113,13 +72,6 @@ impl From<wt_control_protocol::CodexStatus> for ApiCodexStatus {
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ApiCodexMessageDelivery {
-    Steered,
-    Started,
-}
-
 impl From<wt_control_protocol::CodexMessageDelivery> for ApiCodexMessageDelivery {
     fn from(delivery: wt_control_protocol::CodexMessageDelivery) -> Self {
         match delivery {
@@ -127,22 +79,6 @@ impl From<wt_control_protocol::CodexMessageDelivery> for ApiCodexMessageDelivery
             wt_control_protocol::CodexMessageDelivery::Started => Self::Started,
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct ApiWorld {
-    world_id: String,
-    name: String,
-    status: ApiWorldStatus,
-    vcpus: u32,
-    memory_mib: u64,
-    disk_gib: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    guest_ip: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    last_error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ssh: Option<ApiSshAccess>,
 }
 
 impl From<World> for ApiWorld {
@@ -161,16 +97,6 @@ impl From<World> for ApiWorld {
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ApiWorldStatus {
-    Provisioning,
-    Running,
-    Stopped,
-    Destroying,
-    Error,
-}
-
 impl From<WorldStatus> for ApiWorldStatus {
     fn from(status: WorldStatus) -> Self {
         match status {
@@ -183,14 +109,6 @@ impl From<WorldStatus> for ApiWorldStatus {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct ApiSshAccess {
-    user: String,
-    host: String,
-    port: u16,
-    host_keys: Vec<String>,
-}
-
 impl From<wt_control_protocol::SshAccess> for ApiSshAccess {
     fn from(access: wt_control_protocol::SshAccess) -> Self {
         Self {
@@ -200,34 +118,6 @@ impl From<wt_control_protocol::SshAccess> for ApiSshAccess {
             host_keys: access.host_keys,
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct ApiError {
-    code: &'static str,
-    message: String,
-    retryable: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    details: Option<ApiErrorDetails>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum ApiErrorDetails {
-    Capacity {
-        resource: ApiCapacityResource,
-        total: u64,
-        reserved: u64,
-        requested: u64,
-    },
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum ApiCapacityResource {
-    Cpu,
-    Memory,
-    Disk,
 }
 
 impl From<CapacityResource> for ApiCapacityResource {
@@ -244,7 +134,12 @@ struct Reply {
     request_id: Option<String>,
     server_id: Option<String>,
     expires_at_unix_ms: Option<i64>,
-    outcome: ApiOutcome,
+    outcome: ReplyOutcome,
+}
+
+enum ReplyOutcome {
+    Ok { result: ApiResult },
+    Error { error: ApiError },
 }
 
 pub fn run() -> Result<()> {
@@ -491,13 +386,13 @@ fn call(
         expires_at_unix_ms: response.expires_at_unix_ms,
         outcome: match response.outcome {
             Outcome::Ok { response } => match *response {
-                Response::World { world } => ApiOutcome::Ok {
-                    result: ApiResult::World {
+                Response::World { world } => ReplyOutcome::Ok {
+                    result: ApiResult::CreateWorld {
                         world: (*world).into(),
                     },
                 },
-                Response::WorldDeleted { world_id } => ApiOutcome::Ok {
-                    result: ApiResult::WorldDeleted {
+                Response::WorldDeleted { world_id } => ReplyOutcome::Ok {
+                    result: ApiResult::DeleteWorld {
                         world_id: world_id.to_string(),
                     },
                 },
@@ -506,8 +401,8 @@ fn call(
                     turn_id,
                     pane_id,
                     window_name,
-                } => ApiOutcome::Ok {
-                    result: ApiResult::CodexStarted {
+                } => ReplyOutcome::Ok {
+                    result: ApiResult::StartCodex {
                         thread_id,
                         turn_id,
                         pane_id,
@@ -522,8 +417,8 @@ fn call(
                     window_name,
                     screen,
                     observed_at_unix_ms,
-                } => ApiOutcome::Ok {
-                    result: ApiResult::CodexInspection {
+                } => ReplyOutcome::Ok {
+                    result: ApiResult::InspectCodex {
                         thread_id,
                         status: status.into(),
                         active_turn_id,
@@ -537,8 +432,8 @@ fn call(
                     thread_id,
                     turn_id,
                     delivery,
-                } => ApiOutcome::Ok {
-                    result: ApiResult::CodexMessageSent {
+                } => ReplyOutcome::Ok {
+                    result: ApiResult::SendCodexMessage {
                         thread_id,
                         turn_id,
                         delivery: delivery.into(),
@@ -547,8 +442,8 @@ fn call(
                 Response::WorldMail {
                     messages,
                     high_water_id,
-                } => ApiOutcome::Ok {
-                    result: ApiResult::WorldMail {
+                } => ReplyOutcome::Ok {
+                    result: ApiResult::ReadWorldMail {
                         messages: messages
                             .into_iter()
                             .map(|mail| ApiWorldMail {
@@ -579,7 +474,8 @@ fn call(
                 ),
             },
             Outcome::Error { error } => {
-                let details = error.capacity.map(|capacity| ApiErrorDetails::Capacity {
+                let details = error.capacity.map(|capacity| ApiCapacityDetails {
+                    kind: "capacity".to_owned(),
                     resource: capacity.resource.into(),
                     total: capacity.total,
                     reserved: capacity.reserved,
@@ -600,11 +496,11 @@ fn api_error(
     code: &'static str,
     message: impl Into<String>,
     retryable: bool,
-    details: Option<ApiErrorDetails>,
-) -> ApiOutcome {
-    ApiOutcome::Error {
+    details: Option<ApiCapacityDetails>,
+) -> ReplyOutcome {
+    ReplyOutcome::Error {
         error: ApiError {
-            code,
+            code: code.to_owned(),
             message: message.into(),
             retryable,
             details,
@@ -652,7 +548,7 @@ fn write_parse_error(parse_error: serde_json::Error) -> Result<()> {
 }
 
 fn finish(reply: Reply) -> Result<()> {
-    let failed = matches!(reply.outcome, ApiOutcome::Error { .. });
+    let failed = matches!(reply.outcome, ReplyOutcome::Error { .. });
     write_response(reply)?;
     if failed {
         eprintln!("wt api: request failed");
@@ -662,19 +558,29 @@ fn finish(reply: Reply) -> Result<()> {
 }
 
 fn write_response(reply: Reply) -> Result<()> {
-    let stdout = std::io::stdout();
-    let mut output = stdout.lock();
-    serde_json::to_writer(
-        &mut output,
-        &ApiResponse {
+    let response = match reply.outcome {
+        ReplyOutcome::Ok { result } => ApiResponse::Ok {
+            api_version: API_VERSION,
+            request_id: reply
+                .request_id
+                .context("successful API response is missing its request ID")?,
+            server_id: reply
+                .server_id
+                .context("successful API response is missing its server ID")?,
+            expires_at_unix_ms: reply.expires_at_unix_ms,
+            result,
+        },
+        ReplyOutcome::Error { error } => ApiResponse::Error {
             api_version: API_VERSION,
             request_id: reply.request_id,
             server_id: reply.server_id,
             expires_at_unix_ms: reply.expires_at_unix_ms,
-            outcome: reply.outcome,
+            error,
         },
-    )
-    .context("write API response")?;
+    };
+    let stdout = std::io::stdout();
+    let mut output = stdout.lock();
+    serde_json::to_writer(&mut output, &response).context("write API response")?;
     output.write_all(b"\n").context("finish API response")?;
     Ok(())
 }

@@ -67,7 +67,7 @@ const buildParsers = (args) => {
 };
 
 const RequiredStringFormats = ["Uuid"];
-const RequiredNumberFormats = ["Integer","UnsignedInteger"];
+const RequiredNumberFormats = ["Int64","UInt16","UInt32","UInt64"];
 const direct_hoist_0 = new RefRuntype(undefined, "Request");
 const direct_hoist_1 = new RefRuntype(undefined, "Response");
 const direct_hoist_2 = new RefRuntype(undefined, "CreateWorldRequest");
@@ -87,104 +87,116 @@ const direct_hoist_15 = new RefRuntype(undefined, "SendCodexMessageResult");
 const direct_hoist_16 = new RefRuntype(undefined, "ReadWorldMailResult");
 const direct_hoist_17 = new RefRuntype(undefined, "CapacityDetails");
 const direct_hoist_18 = new RefRuntype(undefined, "Error");
-const direct_hoist_19 = new ConstRuntype(undefined, "capacity");
-const direct_hoist_20 = new RefRuntype(undefined, "UnsignedInteger");
-const direct_hoist_21 = new AnyOfConstsRuntype(undefined, [
+const direct_hoist_19 = new RefRuntype(undefined, "SuccessResponse");
+const direct_hoist_20 = new RefRuntype(undefined, "ErrorResponse");
+const direct_hoist_21 = new ConstRuntype(undefined, "capacity");
+const direct_hoist_22 = new RefRuntype(undefined, "UInt64");
+const direct_hoist_23 = new AnyOfConstsRuntype(undefined, [
     "cpu",
     "disk",
     "memory"
 ]);
-const direct_hoist_22 = new ObjectRuntype(undefined, {
-    "kind": direct_hoist_19,
-    "requested": direct_hoist_20,
-    "reserved": direct_hoist_20,
-    "resource": direct_hoist_21,
-    "total": direct_hoist_20
+const direct_hoist_24 = new ObjectRuntype(undefined, {
+    "kind": direct_hoist_21,
+    "requested": direct_hoist_22,
+    "reserved": direct_hoist_22,
+    "resource": direct_hoist_23,
+    "total": direct_hoist_22
 }, []);
-const direct_hoist_23 = new ConstRuntype(undefined, 1);
-const direct_hoist_24 = new TypeofRuntype(undefined, "string");
-const direct_hoist_25 = new RefRuntype(undefined, "Uuid");
-const direct_hoist_26 = new ConstRuntype(undefined, "create_world");
-const direct_hoist_27 = new ObjectRuntype(undefined, {
-    "api_version": direct_hoist_23,
-    "context": direct_hoist_24,
-    "disk_gib": direct_hoist_20,
-    "expected_server_id": new OptionalFieldRuntype(direct_hoist_25),
-    "git_user_email": direct_hoist_24,
-    "git_user_name": direct_hoist_24,
-    "memory_mib": direct_hoist_20,
-    "name": direct_hoist_24,
-    "operation": direct_hoist_26,
-    "request_id": direct_hoist_25,
-    "vcpus": direct_hoist_20
-}, []);
-const direct_hoist_28 = new ObjectRuntype(undefined, {
-    "world": direct_hoist_9
-}, []);
-const direct_hoist_29 = new ConstRuntype(undefined, "delete_world");
+const direct_hoist_25 = new ConstRuntype(undefined, 1);
+const direct_hoist_26 = new TypeofRuntype(undefined, "string");
+const direct_hoist_27 = new RefRuntype(undefined, "Uuid");
+const direct_hoist_28 = new ConstRuntype(undefined, "create_world");
+const direct_hoist_29 = new RefRuntype(undefined, "UInt32");
 const direct_hoist_30 = new ObjectRuntype(undefined, {
-    "api_version": direct_hoist_23,
-    "context": direct_hoist_24,
-    "expected_server_id": new OptionalFieldRuntype(direct_hoist_25),
-    "operation": direct_hoist_29,
-    "request_id": direct_hoist_25,
-    "world_id": direct_hoist_25
+    "api_version": direct_hoist_25,
+    "context": direct_hoist_26,
+    "disk_gib": direct_hoist_22,
+    "expected_server_id": new OptionalFieldRuntype(direct_hoist_27),
+    "git_user_email": direct_hoist_26,
+    "git_user_name": direct_hoist_26,
+    "memory_mib": direct_hoist_22,
+    "name": direct_hoist_26,
+    "operation": direct_hoist_28,
+    "request_id": direct_hoist_27,
+    "vcpus": direct_hoist_29
 }, []);
 const direct_hoist_31 = new ObjectRuntype(undefined, {
-    "world_id": direct_hoist_25
+    "world": direct_hoist_9
 }, []);
-const direct_hoist_32 = new TypeofRuntype(undefined, "boolean");
+const direct_hoist_32 = new ConstRuntype(undefined, "delete_world");
 const direct_hoist_33 = new ObjectRuntype(undefined, {
-    "code": direct_hoist_24,
+    "api_version": direct_hoist_25,
+    "context": direct_hoist_26,
+    "expected_server_id": new OptionalFieldRuntype(direct_hoist_27),
+    "operation": direct_hoist_32,
+    "request_id": direct_hoist_27,
+    "world_id": direct_hoist_27
+}, []);
+const direct_hoist_34 = new ObjectRuntype(undefined, {
+    "world_id": direct_hoist_27
+}, []);
+const direct_hoist_35 = new TypeofRuntype(undefined, "boolean");
+const direct_hoist_36 = new ObjectRuntype(undefined, {
+    "code": direct_hoist_26,
     "details": new OptionalFieldRuntype(direct_hoist_17),
-    "message": direct_hoist_24,
-    "retryable": direct_hoist_32
+    "message": direct_hoist_26,
+    "retryable": direct_hoist_35
 }, []);
-const direct_hoist_34 = new ConstRuntype(undefined, "inspect_codex");
-const direct_hoist_35 = new ObjectRuntype(undefined, {
-    "api_version": direct_hoist_23,
-    "context": direct_hoist_24,
-    "expected_server_id": new OptionalFieldRuntype(direct_hoist_25),
-    "operation": direct_hoist_34,
-    "request_id": direct_hoist_25,
-    "thread_id": direct_hoist_24,
-    "world_id": direct_hoist_25
+const direct_hoist_37 = new RefRuntype(undefined, "Int64");
+const direct_hoist_38 = new ConstRuntype(undefined, "error");
+const direct_hoist_39 = new ObjectRuntype(undefined, {
+    "api_version": direct_hoist_25,
+    "error": direct_hoist_18,
+    "expires_at_unix_ms": new OptionalFieldRuntype(direct_hoist_37),
+    "outcome": direct_hoist_38,
+    "request_id": new OptionalFieldRuntype(direct_hoist_27),
+    "server_id": new OptionalFieldRuntype(direct_hoist_27)
 }, []);
-const direct_hoist_36 = new RefRuntype(undefined, "Integer");
-const direct_hoist_37 = new AnyOfConstsRuntype(undefined, [
+const direct_hoist_40 = new ConstRuntype(undefined, "inspect_codex");
+const direct_hoist_41 = new ObjectRuntype(undefined, {
+    "api_version": direct_hoist_25,
+    "context": direct_hoist_26,
+    "expected_server_id": new OptionalFieldRuntype(direct_hoist_27),
+    "operation": direct_hoist_40,
+    "request_id": direct_hoist_27,
+    "thread_id": direct_hoist_26,
+    "world_id": direct_hoist_27
+}, []);
+const direct_hoist_42 = new AnyOfConstsRuntype(undefined, [
     "active",
     "error",
     "idle"
 ]);
-const direct_hoist_38 = new ObjectRuntype(undefined, {
-    "active_turn_id": new OptionalFieldRuntype(direct_hoist_24),
-    "observed_at_unix_ms": direct_hoist_36,
-    "pane_id": direct_hoist_24,
-    "screen": direct_hoist_24,
-    "status": direct_hoist_37,
-    "thread_id": direct_hoist_24,
-    "window_name": direct_hoist_24
-}, []);
-const direct_hoist_39 = new NumberWithFormatRuntype(undefined, [
-    "Integer"
-]);
-const direct_hoist_40 = new ConstRuntype(undefined, "read_world_mail");
-const direct_hoist_41 = new ObjectRuntype(undefined, {
-    "after_message_id": direct_hoist_20,
-    "api_version": direct_hoist_23,
-    "context": direct_hoist_24,
-    "expected_server_id": new OptionalFieldRuntype(direct_hoist_25),
-    "limit": direct_hoist_20,
-    "operation": direct_hoist_40,
-    "request_id": direct_hoist_25,
-    "world_id": direct_hoist_25
-}, []);
-const direct_hoist_42 = new ArrayRuntype(undefined, direct_hoist_10);
 const direct_hoist_43 = new ObjectRuntype(undefined, {
-    "high_water_message_id": direct_hoist_20,
-    "messages": direct_hoist_42
+    "active_turn_id": new OptionalFieldRuntype(direct_hoist_26),
+    "observed_at_unix_ms": direct_hoist_37,
+    "pane_id": direct_hoist_26,
+    "screen": direct_hoist_26,
+    "status": direct_hoist_42,
+    "thread_id": direct_hoist_26,
+    "window_name": direct_hoist_26
 }, []);
-const direct_hoist_44 = new AnyOfDiscriminatedRuntype(undefined, [
+const direct_hoist_44 = new NumberWithFormatRuntype(undefined, [
+    "Int64"
+]);
+const direct_hoist_45 = new ConstRuntype(undefined, "read_world_mail");
+const direct_hoist_46 = new ObjectRuntype(undefined, {
+    "after_message_id": direct_hoist_22,
+    "api_version": direct_hoist_25,
+    "context": direct_hoist_26,
+    "expected_server_id": new OptionalFieldRuntype(direct_hoist_27),
+    "limit": direct_hoist_29,
+    "operation": direct_hoist_45,
+    "request_id": direct_hoist_27,
+    "world_id": direct_hoist_27
+}, []);
+const direct_hoist_47 = new ArrayRuntype(undefined, direct_hoist_10);
+const direct_hoist_48 = new ObjectRuntype(undefined, {
+    "high_water_message_id": direct_hoist_22,
+    "messages": direct_hoist_47
+}, []);
+const direct_hoist_49 = new AnyOfDiscriminatedRuntype(undefined, [
     direct_hoist_7,
     direct_hoist_2,
     direct_hoist_6,
@@ -206,38 +218,17 @@ const direct_hoist_44 = new AnyOfDiscriminatedRuntype(undefined, [
     "send_codex_message": direct_hoist_6,
     "start_codex": direct_hoist_4
 });
-const direct_hoist_45 = new ObjectRuntype(undefined, {
-    "api_version": direct_hoist_23,
-    "expires_at_unix_ms": new OptionalFieldRuntype(direct_hoist_36),
-    "request_id": new OptionalFieldRuntype(direct_hoist_25),
-    "server_id": new OptionalFieldRuntype(direct_hoist_25)
-}, []);
-const direct_hoist_46 = new ConstRuntype(undefined, "error");
-const direct_hoist_47 = new ObjectRuntype(undefined, {
-    "error": direct_hoist_18,
-    "outcome": direct_hoist_46
-}, []);
-const direct_hoist_48 = new ConstRuntype(undefined, "ok");
-const direct_hoist_49 = new RefRuntype(undefined, "Result");
-const direct_hoist_50 = new ObjectRuntype(undefined, {
-    "outcome": direct_hoist_48,
-    "result": direct_hoist_49
-}, []);
-const direct_hoist_51 = new AnyOfDiscriminatedRuntype(undefined, [
-    direct_hoist_47,
-    direct_hoist_50
+const direct_hoist_50 = new AnyOfDiscriminatedRuntype(undefined, [
+    direct_hoist_20,
+    direct_hoist_19
 ], "outcome", {
-    "error": direct_hoist_47,
-    "ok": direct_hoist_50
+    "error": direct_hoist_20,
+    "ok": direct_hoist_19
 }, {
-    "error": direct_hoist_47,
-    "ok": direct_hoist_50
+    "error": direct_hoist_20,
+    "ok": direct_hoist_19
 });
-const direct_hoist_52 = new AllOfRuntype(undefined, [
-    direct_hoist_45,
-    direct_hoist_51
-]);
-const direct_hoist_53 = new AnyOfRuntype(undefined, [
+const direct_hoist_51 = new AnyOfRuntype(undefined, [
     direct_hoist_11,
     direct_hoist_12,
     direct_hoist_14,
@@ -245,112 +236,133 @@ const direct_hoist_53 = new AnyOfRuntype(undefined, [
     direct_hoist_15,
     direct_hoist_13
 ]);
-const direct_hoist_54 = new ConstRuntype(undefined, "send_codex_message");
-const direct_hoist_55 = new ObjectRuntype(undefined, {
-    "api_version": direct_hoist_23,
-    "context": direct_hoist_24,
-    "expected_server_id": new OptionalFieldRuntype(direct_hoist_25),
-    "message": direct_hoist_24,
-    "operation": direct_hoist_54,
-    "request_id": direct_hoist_25,
-    "thread_id": direct_hoist_24,
-    "world_id": direct_hoist_25
+const direct_hoist_52 = new ConstRuntype(undefined, "send_codex_message");
+const direct_hoist_53 = new ObjectRuntype(undefined, {
+    "api_version": direct_hoist_25,
+    "context": direct_hoist_26,
+    "expected_server_id": new OptionalFieldRuntype(direct_hoist_27),
+    "message": direct_hoist_26,
+    "operation": direct_hoist_52,
+    "request_id": direct_hoist_27,
+    "thread_id": direct_hoist_26,
+    "world_id": direct_hoist_27
 }, []);
-const direct_hoist_56 = new AnyOfConstsRuntype(undefined, [
+const direct_hoist_54 = new AnyOfConstsRuntype(undefined, [
     "started",
     "steered"
 ]);
-const direct_hoist_57 = new ObjectRuntype(undefined, {
-    "delivery": direct_hoist_56,
-    "thread_id": direct_hoist_24,
-    "turn_id": direct_hoist_24
+const direct_hoist_55 = new ObjectRuntype(undefined, {
+    "delivery": direct_hoist_54,
+    "thread_id": direct_hoist_26,
+    "turn_id": direct_hoist_26
 }, []);
-const direct_hoist_58 = new ArrayRuntype(undefined, direct_hoist_24);
-const direct_hoist_59 = new ObjectRuntype(undefined, {
-    "host": direct_hoist_24,
-    "host_keys": direct_hoist_58,
-    "port": direct_hoist_20,
-    "user": direct_hoist_24
+const direct_hoist_56 = new ArrayRuntype(undefined, direct_hoist_26);
+const direct_hoist_57 = new RefRuntype(undefined, "UInt16");
+const direct_hoist_58 = new ObjectRuntype(undefined, {
+    "host": direct_hoist_26,
+    "host_keys": direct_hoist_56,
+    "port": direct_hoist_57,
+    "user": direct_hoist_26
 }, []);
-const direct_hoist_60 = new ConstRuntype(undefined, "start_codex");
+const direct_hoist_59 = new ConstRuntype(undefined, "start_codex");
+const direct_hoist_60 = new ObjectRuntype(undefined, {
+    "api_version": direct_hoist_25,
+    "context": direct_hoist_26,
+    "expected_server_id": new OptionalFieldRuntype(direct_hoist_27),
+    "message": direct_hoist_26,
+    "operation": direct_hoist_59,
+    "request_id": direct_hoist_27,
+    "world_id": direct_hoist_27
+}, []);
 const direct_hoist_61 = new ObjectRuntype(undefined, {
-    "api_version": direct_hoist_23,
-    "context": direct_hoist_24,
-    "expected_server_id": new OptionalFieldRuntype(direct_hoist_25),
-    "message": direct_hoist_24,
-    "operation": direct_hoist_60,
-    "request_id": direct_hoist_25,
-    "world_id": direct_hoist_25
+    "pane_id": direct_hoist_26,
+    "thread_id": direct_hoist_26,
+    "turn_id": direct_hoist_26,
+    "window_name": direct_hoist_26
 }, []);
-const direct_hoist_62 = new ObjectRuntype(undefined, {
-    "pane_id": direct_hoist_24,
-    "thread_id": direct_hoist_24,
-    "turn_id": direct_hoist_24,
-    "window_name": direct_hoist_24
+const direct_hoist_62 = new ConstRuntype(undefined, "ok");
+const direct_hoist_63 = new RefRuntype(undefined, "Result");
+const direct_hoist_64 = new ObjectRuntype(undefined, {
+    "api_version": direct_hoist_25,
+    "expires_at_unix_ms": new OptionalFieldRuntype(direct_hoist_37),
+    "outcome": direct_hoist_62,
+    "request_id": direct_hoist_27,
+    "result": direct_hoist_63,
+    "server_id": direct_hoist_27
 }, []);
-const direct_hoist_63 = new NumberWithFormatRuntype(undefined, [
-    "UnsignedInteger"
+const direct_hoist_65 = new NumberWithFormatRuntype(undefined, [
+    "UInt16"
 ]);
-const direct_hoist_64 = new StringWithFormatRuntype(undefined, [
+const direct_hoist_66 = new NumberWithFormatRuntype(undefined, [
+    "UInt32"
+]);
+const direct_hoist_67 = new NumberWithFormatRuntype(undefined, [
+    "UInt64"
+]);
+const direct_hoist_68 = new StringWithFormatRuntype(undefined, [
     "Uuid"
 ]);
-const direct_hoist_65 = new AnyOfConstsRuntype(undefined, [
+const direct_hoist_69 = new AnyOfConstsRuntype(undefined, [
     "destroying",
     "error",
     "provisioning",
     "running",
     "stopped"
 ]);
-const direct_hoist_66 = new ObjectRuntype(undefined, {
-    "disk_gib": direct_hoist_20,
-    "guest_ip": new OptionalFieldRuntype(direct_hoist_24),
-    "last_error": new OptionalFieldRuntype(direct_hoist_24),
-    "memory_mib": direct_hoist_20,
-    "name": direct_hoist_24,
+const direct_hoist_70 = new ObjectRuntype(undefined, {
+    "disk_gib": direct_hoist_22,
+    "guest_ip": new OptionalFieldRuntype(direct_hoist_26),
+    "last_error": new OptionalFieldRuntype(direct_hoist_26),
+    "memory_mib": direct_hoist_22,
+    "name": direct_hoist_26,
     "ssh": new OptionalFieldRuntype(direct_hoist_8),
-    "status": direct_hoist_65,
-    "vcpus": direct_hoist_20,
-    "world_id": direct_hoist_25
+    "status": direct_hoist_69,
+    "vcpus": direct_hoist_29,
+    "world_id": direct_hoist_27
 }, []);
-const direct_hoist_67 = new AnyOfConstsRuntype(undefined, [
+const direct_hoist_71 = new AnyOfConstsRuntype(undefined, [
     "completed",
     "failed",
     "message"
 ]);
-const direct_hoist_68 = new ObjectRuntype(undefined, {
-    "created_at_unix_ms": direct_hoist_36,
-    "kind": direct_hoist_67,
-    "message_id": direct_hoist_20,
-    "pane_id": new OptionalFieldRuntype(direct_hoist_24),
-    "text": direct_hoist_24,
-    "thread_id": new OptionalFieldRuntype(direct_hoist_24),
-    "turn_id": new OptionalFieldRuntype(direct_hoist_24),
-    "world_id": direct_hoist_25
+const direct_hoist_72 = new ObjectRuntype(undefined, {
+    "created_at_unix_ms": direct_hoist_37,
+    "kind": direct_hoist_71,
+    "message_id": direct_hoist_22,
+    "pane_id": new OptionalFieldRuntype(direct_hoist_26),
+    "text": direct_hoist_26,
+    "thread_id": new OptionalFieldRuntype(direct_hoist_26),
+    "turn_id": new OptionalFieldRuntype(direct_hoist_26),
+    "world_id": direct_hoist_27
 }, []);
 const namedRuntypes = {
-    "CapacityDetails": direct_hoist_22,
-    "CreateWorldRequest": direct_hoist_27,
-    "CreateWorldResult": direct_hoist_28,
-    "DeleteWorldRequest": direct_hoist_30,
-    "DeleteWorldResult": direct_hoist_31,
-    "Error": direct_hoist_33,
-    "InspectCodexRequest": direct_hoist_35,
-    "InspectCodexResult": direct_hoist_38,
-    "Integer": direct_hoist_39,
-    "ReadWorldMailRequest": direct_hoist_41,
-    "ReadWorldMailResult": direct_hoist_43,
-    "Request": direct_hoist_44,
-    "Response": direct_hoist_52,
-    "Result": direct_hoist_53,
-    "SendCodexMessageRequest": direct_hoist_55,
-    "SendCodexMessageResult": direct_hoist_57,
-    "SshAccess": direct_hoist_59,
-    "StartCodexRequest": direct_hoist_61,
-    "StartCodexResult": direct_hoist_62,
-    "UnsignedInteger": direct_hoist_63,
-    "Uuid": direct_hoist_64,
-    "World": direct_hoist_66,
-    "WorldMail": direct_hoist_68
+    "CapacityDetails": direct_hoist_24,
+    "CreateWorldRequest": direct_hoist_30,
+    "CreateWorldResult": direct_hoist_31,
+    "DeleteWorldRequest": direct_hoist_33,
+    "DeleteWorldResult": direct_hoist_34,
+    "Error": direct_hoist_36,
+    "ErrorResponse": direct_hoist_39,
+    "InspectCodexRequest": direct_hoist_41,
+    "InspectCodexResult": direct_hoist_43,
+    "Int64": direct_hoist_44,
+    "ReadWorldMailRequest": direct_hoist_46,
+    "ReadWorldMailResult": direct_hoist_48,
+    "Request": direct_hoist_49,
+    "Response": direct_hoist_50,
+    "Result": direct_hoist_51,
+    "SendCodexMessageRequest": direct_hoist_53,
+    "SendCodexMessageResult": direct_hoist_55,
+    "SshAccess": direct_hoist_58,
+    "StartCodexRequest": direct_hoist_60,
+    "StartCodexResult": direct_hoist_61,
+    "SuccessResponse": direct_hoist_64,
+    "UInt16": direct_hoist_65,
+    "UInt32": direct_hoist_66,
+    "UInt64": direct_hoist_67,
+    "Uuid": direct_hoist_68,
+    "World": direct_hoist_70,
+    "WorldMail": direct_hoist_72
 };
 const buildParsersInput = {
     "Request": direct_hoist_0,
@@ -371,7 +383,9 @@ const buildParsersInput = {
     "SendCodexMessageResult": direct_hoist_15,
     "ReadWorldMailResult": direct_hoist_16,
     "CapacityDetails": direct_hoist_17,
-    "Error": direct_hoist_18
+    "Error": direct_hoist_18,
+    "SuccessResponse": direct_hoist_19,
+    "ErrorResponse": direct_hoist_20
 };
 
 export default { buildParsers };

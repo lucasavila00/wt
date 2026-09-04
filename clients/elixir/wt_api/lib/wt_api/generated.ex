@@ -39,8 +39,14 @@ defmodule WtApi.Generated.Decoder do
   defp decode_value(value, :string) when is_binary(value), do: {:ok, value}
   defp decode_value(value, :integer) when is_integer(value), do: {:ok, value}
 
-  defp decode_value(value, :unsigned_integer) when is_integer(value) and value >= 0,
+  defp decode_value(value, :uint16) when is_integer(value) and value in 0..65_535,
     do: {:ok, value}
+
+  defp decode_value(value, :uint32) when is_integer(value) and value in 0..4_294_967_295,
+    do: {:ok, value}
+
+  defp decode_value(value, :uint64)
+       when is_integer(value) and value in 0..18_446_744_073_709_551_615, do: {:ok, value}
 
   defp decode_value(value, :number) when is_number(value), do: {:ok, value}
   defp decode_value(value, :boolean) when is_boolean(value), do: {:ok, value}
@@ -111,15 +117,15 @@ defmodule WtApi.Request.CreateWorld do
   @schema %{
     api_version: {:required, {:const, 1}},
     context: {:required, :string},
-    disk_gib: {:required, :unsigned_integer},
+    disk_gib: {:required, :uint64},
     expected_server_id: {:optional, :uuid},
     git_user_email: {:required, :string},
     git_user_name: {:required, :string},
-    memory_mib: {:required, :unsigned_integer},
+    memory_mib: {:required, :uint64},
     name: {:required, :string},
     operation: {:required, {:const, "create_world"}},
     request_id: {:required, :uuid},
-    vcpus: {:required, :unsigned_integer}
+    vcpus: {:required, :uint32}
   }
 
   @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
@@ -300,11 +306,11 @@ defmodule WtApi.Request.ReadWorldMail do
         }
 
   @schema %{
-    after_message_id: {:required, :unsigned_integer},
+    after_message_id: {:required, :uint64},
     api_version: {:required, {:const, 1}},
     context: {:required, :string},
     expected_server_id: {:optional, :uuid},
-    limit: {:required, :unsigned_integer},
+    limit: {:required, :uint32},
     operation: {:required, {:const, "read_world_mail"}},
     request_id: {:required, :uuid},
     world_id: {:required, :uuid}
@@ -331,7 +337,7 @@ defmodule WtApi.SshAccess do
   @schema %{
     host: {:required, :string},
     host_keys: {:required, {:list, :string}},
-    port: {:required, :unsigned_integer},
+    port: {:required, :uint16},
     user: {:required, :string}
   }
 
@@ -367,14 +373,14 @@ defmodule WtApi.World do
         }
 
   @schema %{
-    disk_gib: {:required, :unsigned_integer},
+    disk_gib: {:required, :uint64},
     guest_ip: {:optional, :string},
     last_error: {:optional, :string},
-    memory_mib: {:required, :unsigned_integer},
+    memory_mib: {:required, :uint64},
     name: {:required, :string},
     ssh: {:optional, {:struct, WtApi.SshAccess}},
     status: {:required, {:enum, ["destroying", "error", "provisioning", "running", "stopped"]}},
-    vcpus: {:required, :unsigned_integer},
+    vcpus: {:required, :uint32},
     world_id: {:required, :uuid}
   }
 
@@ -410,7 +416,7 @@ defmodule WtApi.WorldMail do
   @schema %{
     created_at_unix_ms: {:required, :integer},
     kind: {:required, {:enum, ["completed", "failed", "message"]}},
-    message_id: {:required, :unsigned_integer},
+    message_id: {:required, :uint64},
     pane_id: {:optional, :string},
     text: {:required, :string},
     thread_id: {:optional, :string},
@@ -558,7 +564,7 @@ defmodule WtApi.Result.ReadWorldMail do
         }
 
   @schema %{
-    high_water_message_id: {:required, :unsigned_integer},
+    high_water_message_id: {:required, :uint64},
     messages: {:required, {:list, {:struct, WtApi.WorldMail}}}
   }
 
@@ -583,10 +589,10 @@ defmodule WtApi.CapacityDetails do
 
   @schema %{
     kind: {:required, {:const, "capacity"}},
-    requested: {:required, :unsigned_integer},
-    reserved: {:required, :unsigned_integer},
+    requested: {:required, :uint64},
+    reserved: {:required, :uint64},
     resource: {:required, {:enum, ["cpu", "disk", "memory"]}},
-    total: {:required, :unsigned_integer}
+    total: {:required, :uint64}
   }
 
   @spec decode(map()) :: {:ok, t()} | {:error, String.t()}

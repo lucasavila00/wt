@@ -21,6 +21,8 @@ export const Codecs = parse.buildParsers<{
   ReadWorldMailResult: Api.ReadWorldMailResult;
   CapacityDetails: Api.CapacityDetails;
   Error: Api.Error;
+  SuccessResponse: Api.SuccessResponse;
+  ErrorResponse: Api.ErrorResponse;
 }>({
   stringFormats: {
     Uuid: {
@@ -30,13 +32,21 @@ export const Codecs = parse.buildParsers<{
     },
   },
   numberFormats: {
-    Integer: {
+    Int64: {
       validator: Number.isSafeInteger,
-      jsonSchemaFormat: "integer",
+      jsonSchemaFormat: "int64",
     },
-    UnsignedInteger: {
+    UInt16: {
+      validator: (value) => Number.isSafeInteger(value) && value >= 0 && value <= 65_535,
+      jsonSchemaFormat: "uint16",
+    },
+    UInt32: {
+      validator: (value) => Number.isSafeInteger(value) && value >= 0 && value <= 4_294_967_295,
+      jsonSchemaFormat: "uint32",
+    },
+    UInt64: {
       validator: (value) => Number.isSafeInteger(value) && value >= 0,
-      jsonSchemaFormat: "unsigned-integer",
+      jsonSchemaFormat: "uint64",
     },
   },
 });
