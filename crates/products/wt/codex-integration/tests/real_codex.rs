@@ -41,11 +41,15 @@ fn call(socket: &mut WebSocket<UnixStream>, id: u64, method: &str, params: Value
 #[ignore = "CI installs real Codex; model requests go only to a rejecting localhost fixture"]
 fn documented_unix_transport_reads_and_resumes_a_real_thread() {
     let binary = std::env::var_os("WT_CODEX_TEST_BINARY").expect("installed Codex binary path");
-    assert!(Command::new(&binary)
-        .arg("--version")
-        .status()
-        .unwrap()
-        .success());
+    let version = Command::new(&binary).arg("--version").output().unwrap();
+    assert!(version.status.success());
+    assert_eq!(
+        String::from_utf8(version.stdout).unwrap().trim(),
+        format!(
+            "codex-cli {}",
+            include_str!("../../../../../.codex-version").trim()
+        )
+    );
     let root = tempfile::tempdir().unwrap();
     let provider = reject_provider::RejectProvider::new();
     std::fs::create_dir(root.path().join(".codex")).unwrap();

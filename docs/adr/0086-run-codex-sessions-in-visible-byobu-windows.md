@@ -52,12 +52,15 @@ The service uses documented `codex app-server --listen unix:///...` and
 `codex --remote unix:///... resume THREAD_ID` commands, not hidden daemon/proxy commands. Both the
 App Server and completion worker start after history/authentication mounts and restart on failure.
 This is a documented integration surface, not a stability guarantee: OpenAI labels the WebSocket
-transport experimental. Validate compatibility when upgrading Codex. See the
+transport experimental. `.codex-version` is the single runtime version source for guest image
+installation and CI. Both verify the installed executable reports that version. Upgrade by
+changing that file and passing the real-runtime compatibility checks before rebuilding images;
+pinning limits compatibility drift, not the experimental support status. See the
 [official App Server documentation](https://learn.chatgpt.com/docs/app-server) and
 [CLI developer commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
 
-WT explicitly requests legacy thread history with the experimental capability enabled. Codex
-0.153.3 defaults to paginated history whose full read/resume operations are not implemented.
+WT explicitly requests legacy thread history with the experimental capability enabled. The
+pinned runtime defaults to paginated history whose full read/resume operations are not implemented.
 Fresh legacy threads are not readable/resumable until materialized: register their known-empty
 baseline first, submit the initial turn, then attempt to attach the TUI. Never infer history mode
 from the presence of a thread ID or bypass unsupported history by scraping rollout files.
