@@ -141,6 +141,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::DeleteWorld { world_id } => Some(*world_id),
             _ => None,
         };
+        let codex_mutation = matches!(
+            operation,
+            Operation::StartCodex { .. }
+                | Operation::ResumeCodex { .. }
+                | Operation::SendCodexMessage { .. }
+        );
         let result = self.execute_with_progress(owner, operation, progress);
         let outcome = match result {
             Ok(response) => Outcome::Ok {
@@ -154,10 +160,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 }
             }
             Err(mut error) => {
-                if matches!(
-                    error.code,
-                    ErrorCode::Capacity | ErrorCode::Backend | ErrorCode::Internal
-                ) {
+                if !codex_mutation
+                    && matches!(
+                        error.code,
+                        ErrorCode::Capacity | ErrorCode::Backend | ErrorCode::Internal
+                    )
+                {
                     error.retryable = true;
                 }
                 Outcome::Error { error }
@@ -173,27 +181,32 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         let response_json = match serde_json::to_string(&outcome) {
             Ok(response_json) => response_json,
             Err(error) => {
-                let _ = self
-                    .store
-                    .abort_api_mutation(owner, request_id, request_hash);
-                return ApiResponse::error(
-                    ApiError::new(ErrorCode::Internal, error.to_string()).retryable(),
-                )
-                .with_request_metadata(request_id, server_id, None);
+                if !codex_mutation {
+                    let _ = self
+                        .store
+                        .abort_api_mutation(owner, request_id, request_hash);
+                }
+                let mut error = ApiError::new(ErrorCode::Internal, error.to_string());
+                error.retryable = !codex_mutation;
+                return ApiResponse::error(error)
+                    .with_request_metadata(request_id, server_id, None);
             }
         };
         if let Err(error) =
             self.store
                 .finish_api_mutation(owner, request_id, request_hash, &response_json)
         {
-            let _ = self
-                .store
-                .abort_api_mutation(owner, request_id, request_hash);
-            return ApiResponse::error(
-                ApiError::new(ErrorCode::Internal, format!("store API result: {error}"))
-                    .retryable(),
-            )
-            .with_request_metadata(request_id, server_id, None);
+            // Codex execution may already have happened. Preserve its reservation even
+            // when storing the response fails; a later retry must not run the turn again.
+            if !codex_mutation {
+                let _ = self
+                    .store
+                    .abort_api_mutation(owner, request_id, request_hash);
+            }
+            let mut error =
+                ApiError::new(ErrorCode::Internal, format!("store API result: {error}"));
+            error.retryable = !codex_mutation;
+            return ApiResponse::error(error).with_request_metadata(request_id, server_id, None);
         }
         ApiResponse::from_outcome(outcome).with_request_metadata(
             request_id,
