@@ -27,6 +27,7 @@ fn call(socket: &mut WebSocket<UnixStream>, id: u64, method: &str, params: Value
         };
         let response: Value = serde_json::from_str(&text).unwrap();
         if response.get("method").is_none() && response["id"] == id {
+            eprintln!("{method}: {response}");
             assert!(response.get("error").is_none(), "{response}");
             return response["result"].clone();
         }
@@ -37,6 +38,11 @@ fn call(socket: &mut WebSocket<UnixStream>, id: u64, method: &str, params: Value
 #[ignore = "CI installs the real Codex executable; no model calls or authentication required"]
 fn documented_unix_transport_reads_and_resumes_a_real_thread() {
     let binary = std::env::var_os("WT_CODEX_TEST_BINARY").expect("installed Codex binary path");
+    assert!(Command::new(&binary)
+        .arg("--version")
+        .status()
+        .unwrap()
+        .success());
     let root = tempfile::tempdir().unwrap();
     std::fs::create_dir(root.path().join(".codex")).unwrap();
     let state = root.path().join(".local/state/wt/codex");
@@ -80,7 +86,7 @@ fn documented_unix_transport_reads_and_resumes_a_real_thread() {
         &mut socket,
         1,
         "initialize",
-        json!({"clientInfo":{"name":"wt_ci","version":"1"}}),
+        json!({"capabilities":{"experimentalApi":true},"clientInfo":{"name":"wt_ci","version":"1"}}),
     );
     socket
         .send(Message::Text(
@@ -94,18 +100,29 @@ fn documented_unix_transport_reads_and_resumes_a_real_thread() {
         2,
         "thread/start",
         json!({
-            "cwd":root.path(), "approvalPolicy":"never", "sandbox":"danger-full-access"
+            "cwd":root.path(), "approvalPolicy":"never", "sandbox":"danger-full-access",
+            "historyMode":"legacy", "serviceName":"wt"
         }),
     );
     let thread = started["thread"]["id"].as_str().unwrap();
-    let snapshot = call(
+    assert_eq!(started["thread"]["historyMode"], "legacy");
+    // Materialize retained history without making a model request or starting work.
+    call(
         &mut socket,
         3,
+        "thread/inject_items",
+        json!({"threadId":thread,"items":[{
+            "type":"message", "role":"user", "content":[{"type":"input_text","text":"WT compatibility fixture"}]
+        }]}),
+    );
+    let snapshot = call(
+        &mut socket,
+        4,
         "thread/read",
         json!({"threadId":thread,"includeTurns":true}),
     );
-    assert_eq!(snapshot["thread"]["turns"], json!([]));
-    let resumed = call(&mut socket, 4, "thread/resume", json!({"threadId":thread}));
+    assert!(snapshot["thread"]["turns"].is_array());
+    let resumed = call(&mut socket, 5, "thread/resume", json!({"threadId":thread}));
     assert_eq!(resumed["thread"]["id"], thread);
 
     // Exercise WT's real client independently of both this connection and a terminal pane.

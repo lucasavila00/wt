@@ -66,9 +66,9 @@ struct Pane {
 pub(crate) fn start(message: &str) -> Result<StartOutput> {
     let mut rpc = Connection::open()?;
     let thread_id = start_thread(&mut rpc)?;
-    let pane = optional_pane(create_pane(&thread_id));
-    crate::tracking::register(&mut rpc, &thread_id)?;
+    crate::tracking::register_new(&thread_id)?;
     let turn_id = start_turn(&mut rpc, &thread_id, message)?;
+    let pane = optional_pane(create_pane(&thread_id));
     Ok(StartOutput {
         thread_id,
         turn_id,
@@ -123,7 +123,8 @@ fn start_thread(rpc: &mut impl Rpc) -> Result<String> {
             "cwd": "/home/wt",
             "approvalPolicy": "never",
             "sandbox": "danger-full-access",
-            "serviceName": "wt"
+            "serviceName": "wt",
+            "historyMode": "legacy"
         }),
     )?;
     required_string(&started, "/thread/id", "thread/start thread ID")

@@ -55,6 +55,12 @@ transport experimental. Validate compatibility when upgrading Codex. See the
 [official App Server documentation](https://learn.chatgpt.com/docs/app-server) and
 [CLI developer commands](https://learn.chatgpt.com/docs/developer-commands?surface=cli).
 
+WT explicitly requests legacy thread history with the experimental capability enabled. Codex
+0.153.3 defaults to paginated history whose full read/resume operations are not implemented.
+Fresh legacy threads are not readable/resumable until materialized: register their known-empty
+baseline first, submit the initial turn, then attempt to attach the TUI. Never infer history mode
+from the presence of a thread ID or bypass unsupported history by scraping rollout files.
+
 Resume requires a running world and the normal expected-server identity check and per-world
 operation lock. Request-ID replay returns the original result; use a new request ID for a later
 restart. Missing thread history is an error, never an implicit replacement conversation.

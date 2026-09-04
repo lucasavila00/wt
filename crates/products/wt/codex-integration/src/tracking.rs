@@ -75,6 +75,20 @@ pub(crate) fn register(rpc: &mut impl Rpc, thread_id: &str) -> Result<()> {
     )
 }
 
+/// A fresh legacy thread is not materialized/readable until its first user message.
+pub(crate) fn register_new(thread_id: &str) -> Result<()> {
+    let path = directory()?.join(format!("{:x}.json", Sha256::digest(thread_id.as_bytes())));
+    save(
+        &path,
+        &TrackedThread {
+            thread_id: thread_id.into(),
+            settled: BTreeSet::new(),
+            pending: BTreeMap::new(),
+        },
+        true,
+    )
+}
+
 fn turns(snapshot: &Value) -> Result<&Vec<Value>> {
     snapshot
         .pointer("/thread/turns")

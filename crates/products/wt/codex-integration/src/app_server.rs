@@ -41,7 +41,7 @@ impl Connection {
         let mut connection = Self { socket, next_id: 1 };
         connection.call(
             "initialize",
-            json!({ "clientInfo": {
+            json!({ "capabilities": { "experimentalApi": true }, "clientInfo": {
                 "name": "wt", "title": "WT", "version": env!("CARGO_PKG_VERSION")
             }}),
         )?;
