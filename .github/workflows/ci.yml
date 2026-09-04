@@ -47,7 +47,7 @@ jobs:
       - name: Install Codex using the guest installer source
         run: curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 
-      - name: Verify the documented real Codex transport without model calls
+      - name: Verify real Codex against a rejecting localhost provider
         run: |
           WT_CODEX_TEST_BINARY="$HOME/.codex/packages/standalone/current/bin/codex" \
             cargo test -p wt-codex-integration --locked --test real_codex -- --ignored

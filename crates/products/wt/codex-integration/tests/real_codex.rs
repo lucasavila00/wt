@@ -1,4 +1,6 @@
-//! No model requests or credentials: exercise the installed Codex protocol, not a test peer.
+//! Real Codex with a rejecting localhost provider: no external model service or credentials.
+#[path = "support/reject_provider.rs"]
+mod reject_provider;
 use serde_json::{json, Value};
 use std::os::unix::net::UnixStream;
 use std::process::{Child, Command, Stdio};
@@ -35,7 +37,7 @@ fn call(socket: &mut WebSocket<UnixStream>, id: u64, method: &str, params: Value
 }
 
 #[test]
-#[ignore = "CI installs the real Codex executable; no model calls or authentication required"]
+#[ignore = "CI installs real Codex; model requests go only to a rejecting localhost fixture"]
 fn documented_unix_transport_reads_and_resumes_a_real_thread() {
     let binary = std::env::var_os("WT_CODEX_TEST_BINARY").expect("installed Codex binary path");
     assert!(Command::new(&binary)
@@ -44,12 +46,21 @@ fn documented_unix_transport_reads_and_resumes_a_real_thread() {
         .unwrap()
         .success());
     let root = tempfile::tempdir().unwrap();
+    let provider = reject_provider::RejectProvider::new();
     std::fs::create_dir(root.path().join(".codex")).unwrap();
     let state = root.path().join(".local/state/wt/codex");
     std::fs::create_dir_all(&state).unwrap();
     let path = state.join("app-server.sock");
     let mut server = Server(
         Command::new(binary)
+            .args([
+                "-c",
+                "model='wt-compatibility-fixture'",
+                "-c",
+                "model_provider='wt_ci'",
+                "-c",
+                &provider.config(),
+            ])
             .args([
                 "app-server",
                 "--listen",
@@ -106,23 +117,53 @@ fn documented_unix_transport_reads_and_resumes_a_real_thread() {
     );
     let thread = started["thread"]["id"].as_str().unwrap();
     assert_eq!(started["thread"]["historyMode"], "legacy");
-    // Materialize retained history without making a model request or starting work.
-    call(
+    // Materialize real history; the only model endpoint deliberately rejects work.
+    let turn = call(
         &mut socket,
         3,
-        "thread/inject_items",
-        json!({"threadId":thread,"items":[{
-            "type":"message", "role":"user", "content":[{"type":"input_text","text":"WT compatibility fixture"}]
-        }]}),
+        "turn/start",
+        json!({"threadId":thread,
+        "input":[{"type":"text","text":"WT compatibility fixture"}]}),
     );
-    let snapshot = call(
+    let turn_id = turn["turn"]["id"].as_str().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while provider.requests() == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "Codex did not contact the local fixture"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let mut request_id = 4;
+    loop {
+        let snapshot = call(
+            &mut socket,
+            request_id,
+            "thread/read",
+            json!({"threadId":thread,"includeTurns":true}),
+        );
+        request_id += 1;
+        if snapshot["thread"]["turns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|turn| turn["id"] == turn_id && turn["status"] == "failed")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Codex did not persist the failed turn"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(provider.requests(), 1);
+    let resumed = call(
         &mut socket,
-        4,
-        "thread/read",
-        json!({"threadId":thread,"includeTurns":true}),
+        request_id,
+        "thread/resume",
+        json!({"threadId":thread}),
     );
-    assert!(snapshot["thread"]["turns"].is_array());
-    let resumed = call(&mut socket, 5, "thread/resume", json!({"threadId":thread}));
     assert_eq!(resumed["thread"]["id"], thread);
 
     // Exercise WT's real client independently of both this connection and a terminal pane.
