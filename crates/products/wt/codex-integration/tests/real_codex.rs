@@ -38,6 +38,7 @@ fn call(socket: &mut WebSocket<UnixStream>, id: u64, method: &str, params: Value
 fn documented_unix_transport_reads_and_resumes_a_real_thread() {
     let binary = std::env::var_os("WT_CODEX_TEST_BINARY").expect("installed Codex binary path");
     let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir(root.path().join(".codex")).unwrap();
     let state = root.path().join(".local/state/wt/codex");
     std::fs::create_dir_all(&state).unwrap();
     let path = state.join("app-server.sock");
