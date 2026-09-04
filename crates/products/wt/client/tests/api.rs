@@ -119,7 +119,7 @@ fn creates_a_world_with_the_versioned_json_contract() {
     );
     assert!(output.stderr.is_empty());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","result":{"world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}
+    {"outcome":"ok","api_version":1,"expires_at_unix_ms":2592000100,"request_id":"11111111-1111-4111-8111-111111111111","result":{"world":{"disk_gib":32,"guest_ip":"192.0.2.2","memory_mib":4096,"name":"agent-1","ssh":{"host":"192.0.2.2","host_keys":["ssh-ed25519 AAAATEST guest"],"port":22,"user":"wt"},"status":"running","vcpus":2,"world_id":"00000000-0000-0000-0000-000000000001"}},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 
@@ -140,7 +140,7 @@ fn deletes_a_world_with_the_versioned_json_contract() {
     );
     assert!(output.stderr.is_empty());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","result":{"world_id":"00000000-0000-0000-0000-000000000001"}}
+    {"outcome":"ok","api_version":1,"expires_at_unix_ms":2592000100,"request_id":"11111111-1111-4111-8111-111111111111","result":{"world_id":"00000000-0000-0000-0000-000000000001"},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 
@@ -154,7 +154,7 @@ fn starts_inspects_and_steers_codex() {
     );
     assert!(started.status.success());
     insta::assert_snapshot!(String::from_utf8(started.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","result":{"thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123"}}
+    {"outcome":"ok","api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"pane_id":"%7","thread_id":"thread-123","turn_id":"turn-456","window_name":"codex-thread-123"},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 
     let inspected = call_api(
@@ -164,7 +164,7 @@ fn starts_inspects_and_steers_codex() {
     );
     assert!(inspected.status.success());
     insta::assert_snapshot!(String::from_utf8(inspected.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","result":{"thread_id":"thread-123","status":"active","active_turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123","screen":"Codex is working","observed_at_unix_ms":1800000000000}}
+    {"outcome":"ok","api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"active_turn_id":"turn-456","observed_at_unix_ms":1800000000000,"pane_id":"%7","screen":"Codex is working","status":"active","thread_id":"thread-123","window_name":"codex-thread-123"},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 
     let sent = call_api(
@@ -174,7 +174,7 @@ fn starts_inspects_and_steers_codex() {
     );
     assert!(sent.status.success());
     insta::assert_snapshot!(String::from_utf8(sent.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","result":{"thread_id":"thread-123","turn_id":"turn-789","delivery":"steered"}}
+    {"outcome":"ok","api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"delivery":"steered","thread_id":"thread-123","turn_id":"turn-789"},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 
@@ -193,7 +193,7 @@ fn reads_attributed_world_mail() {
         String::from_utf8_lossy(&output.stderr)
     );
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","result":{"messages":[{"message_id":7,"world_id":"00000000-0000-0000-0000-000000000001","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","text":"done"}],"high_water_message_id":7}}
+    {"outcome":"ok","api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"high_water_message_id":7,"messages":[{"created_at_unix_ms":1800000000000,"kind":"completed","message_id":7,"pane_id":"%7","text":"done","thread_id":"thread-123","turn_id":"turn-456","world_id":"00000000-0000-0000-0000-000000000001"}]},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 
@@ -208,7 +208,7 @@ fn rejects_unknown_request_fields() {
 
     assert!(!output.status.success());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"outcome":"error","error":{"code":"invalid_request","message":"invalid JSON request","retryable":false}}
+    {"outcome":"error","api_version":1,"error":{"code":"invalid_request","message":"invalid JSON request","retryable":false}}
     "###);
 }
 
@@ -223,7 +223,7 @@ fn reports_server_rejections_as_nonzero_json_errors() {
 
     assert_eq!(output.status.code(), Some(1));
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"error","error":{"code":"conflict","message":"world already exists","retryable":false}}
+    {"outcome":"error","api_version":1,"error":{"code":"conflict","message":"world already exists","retryable":false},"expires_at_unix_ms":2592000100,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 
@@ -238,7 +238,7 @@ fn deletes_an_already_absent_world_successfully() {
 
     assert!(output.status.success());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","result":{"world_id":"00000000-0000-0000-0000-000000000002"}}
+    {"outcome":"ok","api_version":1,"expires_at_unix_ms":2592000100,"request_id":"11111111-1111-4111-8111-111111111111","result":{"world_id":"00000000-0000-0000-0000-000000000002"},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 
@@ -253,7 +253,7 @@ fn returns_structured_capacity_details() {
 
     assert_eq!(output.status.code(), Some(1));
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"details":{"kind":"capacity","resource":"cpu","total":4,"reserved":4,"requested":2}}}
+    {"outcome":"error","api_version":1,"error":{"code":"capacity","details":{"kind":"capacity","requested":2,"reserved":4,"resource":"cpu","total":4},"message":"world CPU capacity is full","retryable":true},"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 
@@ -268,6 +268,6 @@ fn rejects_changed_server_response_metadata() {
 
     assert_eq!(output.status.code(), Some(1));
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
-    {"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"internal_error","message":"server omitted or changed API request metadata","retryable":false}}
+    {"outcome":"error","api_version":1,"error":{"code":"internal_error","message":"server omitted or changed API request metadata","retryable":false},"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }

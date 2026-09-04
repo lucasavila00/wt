@@ -1,0 +1,24 @@
+{
+  "parser": "./parser.ts",
+  "outputDir": "./generated",
+  "codegen": 2,
+  "stringFormats": [
+    {
+      "name": "Uuid"
+    }
+  ],
+  "numberFormats": [
+    {
+      "name": "Int64"
+    },
+    {
+      "name": "UInt16"
+    },
+    {
+      "name": "UInt32"
+    },
+    {
+      "name": "UInt64"
+    }
+  ]
+}

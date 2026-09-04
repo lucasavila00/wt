@@ -2,6 +2,18 @@ use super::*;
 use uuid::Uuid;
 use wt_control_protocol::{Capacity, CapacityResource, SshAccess, World, WorldName, WorldStatus};
 
+#[test]
+fn api_help_is_the_complete_typescript_contract() {
+    let mut command = Cli::command();
+    let api = command
+        .find_subcommand_mut("api")
+        .expect("api subcommand exists");
+    let help = api.render_long_help().to_string();
+
+    assert!(help.ends_with(API_TYPESCRIPT_CONTRACT));
+    insta::assert_snapshot!(help);
+}
+
 fn item(context: &str, name: &str, status: WorldStatus) -> ContextWorld {
     ContextWorld {
         context: context.to_owned(),
