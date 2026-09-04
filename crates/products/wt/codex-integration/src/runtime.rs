@@ -2,18 +2,12 @@ use crate::app_server::{Connection, Rpc};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
-use wt_agent_tool_gateway::{
-    read_json_line, write_json_line, ClientOperation, ClientRequest, CodexTurnStatus,
-    TransportResponse, PROTOCOL_VERSION, RELAY_SOCKET,
-};
 
 const TMUX: &str = "/usr/bin/tmux";
 const BYOBU: &str = "/usr/bin/byobu-tmux";
-const WTG: &str = "/usr/local/bin/wtg";
 const TMUX_CONFIG: &str = "/usr/local/share/wt-tmux.conf";
 const TMUX_SESSION: &str = "wt-host";
 const THREAD_OPTION: &str = "@wt_codex_thread_id";
@@ -23,17 +17,17 @@ const WINDOW_NAME: &str = "codex";
 pub(crate) struct StartOutput {
     pub thread_id: String,
     pub turn_id: String,
-    pub pane_id: String,
-    pub window_name: String,
+    pub pane_id: Option<String>,
+    pub window_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct InspectOutput {
     pub status: RuntimeStatus,
     pub active_turn_id: Option<String>,
-    pub pane_id: String,
-    pub window_name: String,
-    pub screen: String,
+    pub pane_id: Option<String>,
+    pub window_name: Option<String>,
+    pub screen: Option<String>,
     pub observed_at_unix_ms: i64,
 }
 
@@ -73,27 +67,29 @@ struct Pane {
 pub(crate) fn start(codex: &Path, message: &str) -> Result<StartOutput> {
     let mut rpc = Connection::open(codex.as_os_str())?;
     let thread_id = start_thread(&mut rpc)?;
-    let pane = create_pane(codex, &thread_id)?;
+    let pane = optional_pane(create_pane(codex, &thread_id));
+    crate::tracking::register(&mut rpc, &thread_id)?;
     let turn_id = start_turn(&mut rpc, &thread_id, message)?;
-    spawn_watcher(&thread_id, &turn_id, &pane.pane_id)?;
     Ok(StartOutput {
         thread_id,
         turn_id,
-        pane_id: pane.pane_id,
-        window_name: pane.window_name,
+        pane_id: pane.as_ref().map(|pane| pane.pane_id.clone()),
+        window_name: pane.map(|pane| pane.window_name),
     })
 }
 
 pub(crate) fn inspect(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
     let mut rpc = Connection::open(codex.as_os_str())?;
     let state = inspect_thread(&mut rpc, thread_id)?;
-    let pane = find_pane(thread_id)?;
-    let screen = capture_screen(&pane.pane_id)?;
+    let pane = optional_pane(find_pane(thread_id));
+    let screen = pane
+        .as_ref()
+        .and_then(|pane| capture_screen(&pane.pane_id).ok());
     Ok(InspectOutput {
         status: state.status,
         active_turn_id: state.active_turn_id,
-        pane_id: pane.pane_id,
-        window_name: pane.window_name,
+        pane_id: pane.as_ref().map(|pane| pane.pane_id.clone()),
+        window_name: pane.map(|pane| pane.window_name),
         screen,
         observed_at_unix_ms: now_unix_ms()?,
     })
@@ -101,46 +97,24 @@ pub(crate) fn inspect(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
 
 pub(crate) fn resume(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
     let mut rpc = Connection::open(codex.as_os_str())?;
+    crate::tracking::register(&mut rpc, thread_id)?;
     rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
-    find_pane(thread_id).or_else(|_| create_pane(codex, thread_id))?;
+    optional_pane(find_pane(thread_id).or_else(|_| create_pane(codex, thread_id)));
     inspect(codex, thread_id)
 }
 
 pub(crate) fn send(codex: &Path, thread_id: &str, message: &str) -> Result<SendOutput> {
-    let pane = find_pane(thread_id)?;
     let mut rpc = Connection::open(codex.as_os_str())?;
+    crate::tracking::register(&mut rpc, thread_id)?;
+    rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
     let output = send_message(&mut rpc, thread_id, message)?;
-    if output.delivery == MessageDelivery::Started {
-        spawn_watcher(thread_id, &output.turn_id, &pane.pane_id)?;
-    }
     Ok(output)
 }
 
-pub(crate) fn watch(codex: &Path, thread_id: &str, turn_id: &str, pane_id: &str) -> Result<()> {
-    let mut rpc = Connection::open(codex.as_os_str())?;
-    let resumed = rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
-    if let Some(completion) = completion_from_thread(&resumed, turn_id, pane_id)? {
-        return deliver_completion(completion);
-    }
-    loop {
-        let notification = rpc.notification()?;
-        if notification.get("method").and_then(Value::as_str) != Some("turn/completed")
-            || notification
-                .pointer("/params/turn/id")
-                .and_then(Value::as_str)
-                != Some(turn_id)
-        {
-            continue;
-        }
-        let completion = completion_from_turn(
-            thread_id,
-            pane_id,
-            notification
-                .pointer("/params/turn")
-                .context("turn/completed has no turn")?,
-        )?;
-        return deliver_completion(completion);
-    }
+fn optional_pane(result: Result<Pane>) -> Option<Pane> {
+    result
+        .map_err(|error| eprintln!("WT Codex presentation unavailable: {error:#}"))
+        .ok()
 }
 
 fn start_thread(rpc: &mut impl Rpc) -> Result<String> {
@@ -250,7 +224,12 @@ fn create_pane(codex: &Path, thread_id: &str) -> Result<Pane> {
             WINDOW_NAME,
         ])
         .arg(codex)
-        .args(["--remote", "unix://", "resume", thread_id])
+        .args([
+            "--remote",
+            &crate::app_server::endpoint()?,
+            "resume",
+            thread_id,
+        ])
         .output()
         .context("create Codex Byobu window")?;
     if !output.status.success() {
@@ -377,113 +356,6 @@ fn capture_screen(pane_id: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn spawn_watcher(thread_id: &str, turn_id: &str, pane_id: &str) -> Result<()> {
-    let status = Command::new("/usr/bin/setsid")
-        .arg("--fork")
-        .arg(WTG)
-        .args(["codex", "watch-turn", thread_id, turn_id, pane_id])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .context("start Codex turn completion watcher")?;
-    if !status.success() {
-        bail!("start Codex turn completion watcher")
-    }
-    Ok(())
-}
-
-struct Completion {
-    thread_id: String,
-    turn_id: String,
-    pane_id: String,
-    status: CodexTurnStatus,
-    message: String,
-}
-
-fn completion_from_thread(
-    result: &Value,
-    turn_id: &str,
-    pane_id: &str,
-) -> Result<Option<Completion>> {
-    let thread = result
-        .get("thread")
-        .context("thread/resume has no thread")?;
-    let thread_id = required_string(thread, "/id", "thread/resume thread ID")?;
-    let turn = thread
-        .get("turns")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .find(|turn| turn.get("id").and_then(Value::as_str) == Some(turn_id));
-    turn.map(|turn| completion_from_turn(&thread_id, pane_id, turn))
-        .transpose()
-}
-
-fn completion_from_turn(thread_id: &str, pane_id: &str, turn: &Value) -> Result<Completion> {
-    let turn_id = required_string(turn, "/id", "completed turn ID")?;
-    let (status, message) = match turn.get("status").and_then(Value::as_str) {
-        Some("completed") => (
-            CodexTurnStatus::Completed,
-            last_agent_message(turn).unwrap_or_else(|| "Codex turn completed".into()),
-        ),
-        Some("failed" | "interrupted") => (
-            CodexTurnStatus::Failed,
-            turn.pointer("/error/message")
-                .and_then(Value::as_str)
-                .unwrap_or("Codex turn failed")
-                .to_owned(),
-        ),
-        Some("inProgress") => bail!("Codex turn is not complete"),
-        other => bail!("unknown Codex turn status: {other:?}"),
-    };
-    Ok(Completion {
-        thread_id: thread_id.to_owned(),
-        turn_id,
-        pane_id: pane_id.to_owned(),
-        status,
-        message,
-    })
-}
-
-fn last_agent_message(turn: &Value) -> Option<String> {
-    turn.get("items")?
-        .as_array()?
-        .iter()
-        .rev()
-        .find(|item| item.get("type").and_then(Value::as_str) == Some("agentMessage"))?
-        .get("text")?
-        .as_str()
-        .map(str::to_owned)
-}
-
-fn deliver_completion(completion: Completion) -> Result<()> {
-    let mut relay = UnixStream::connect(RELAY_SOCKET).context("connect to WT guest relay")?;
-    write_json_line(
-        &mut relay,
-        &ClientRequest {
-            protocol_version: PROTOCOL_VERSION,
-            operation: ClientOperation::CodexTurnFinished {
-                thread_id: completion.thread_id,
-                turn_id: completion.turn_id,
-                pane_id: completion.pane_id,
-                status: completion.status,
-                message: completion.message,
-            },
-        },
-    )
-    .context("send Codex completion to WT guest relay")?;
-    let response: TransportResponse =
-        read_json_line(&mut relay).context("read Codex completion response")?;
-    if !response.ok {
-        bail!(
-            "WT rejected Codex completion: {}",
-            response.error.as_deref().unwrap_or("unknown error")
-        )
-    }
-    Ok(())
-}
-
 fn now_unix_ms() -> Result<i64> {
     i64::try_from(
         SystemTime::now()
@@ -505,7 +377,9 @@ fn required_string(value: &Value, pointer: &str, description: &str) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::completion::from_turn as completion_from_turn;
     use std::collections::VecDeque;
+    use wt_agent_tool_gateway::CodexTurnStatus;
 
     struct FakeRpc {
         replies: VecDeque<(&'static str, Value)>,
@@ -516,10 +390,6 @@ mod tests {
             let (expected, result) = self.replies.pop_front().unwrap();
             assert_eq!(method, expected);
             Ok(result)
-        }
-
-        fn notification(&mut self) -> Result<Value> {
-            unreachable!()
         }
     }
 
@@ -568,7 +438,7 @@ mod tests {
     fn completed_turn_uses_the_final_agent_message() {
         let completion = completion_from_turn(
             "thread-1",
-            "%3",
+            Some("%3"),
             &json!({
                 "id": "turn-1",
                 "status": "completed",
@@ -581,7 +451,7 @@ mod tests {
         .unwrap();
         assert_eq!(completion.thread_id, "thread-1");
         assert_eq!(completion.turn_id, "turn-1");
-        assert_eq!(completion.pane_id, "%3");
+        assert_eq!(completion.pane_id.as_deref(), Some("%3"));
         assert_eq!(completion.status, CodexTurnStatus::Completed);
         assert_eq!(completion.message, "done");
     }
@@ -590,7 +460,7 @@ mod tests {
     fn completed_turn_always_has_mailbox_text() {
         let completion = completion_from_turn(
             "thread-1",
-            "%3",
+            Some("%3"),
             &json!({ "id": "turn-1", "status": "completed", "items": [] }),
         )
         .unwrap();

@@ -359,10 +359,7 @@ fn call(
 ) -> Reply {
     let api_request = if matches!(
         &operation,
-        Operation::ListWorldMail { .. }
-            | Operation::StartCodex { .. }
-            | Operation::InspectCodex { .. }
-            | Operation::SendCodexMessage { .. }
+        Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
     ) {
         ApiRequest {
             protocol_version: wt_control_protocol::PROTOCOL_VERSION,

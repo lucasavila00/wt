@@ -245,16 +245,16 @@ pub enum Response {
     CodexStarted {
         thread_id: String,
         turn_id: String,
-        pane_id: String,
-        window_name: String,
+        pane_id: Option<String>,
+        window_name: Option<String>,
     },
     CodexInspection {
         thread_id: String,
         status: CodexStatus,
         active_turn_id: Option<String>,
-        pane_id: String,
-        window_name: String,
-        screen: String,
+        pane_id: Option<String>,
+        window_name: Option<String>,
+        screen: Option<String>,
         observed_at_unix_ms: i64,
     },
     CodexMessageSent {

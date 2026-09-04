@@ -120,11 +120,14 @@ pub(super) enum ApiResult {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         active_turn_id: Option<String>,
         observed_at_unix_ms: i64,
-        pane_id: String,
-        screen: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pane_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        screen: Option<String>,
         status: ApiCodexStatus,
         thread_id: String,
-        window_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window_name: Option<String>,
     },
     ReadWorldMail {
         high_water_message_id: u64,
@@ -136,10 +139,12 @@ pub(super) enum ApiResult {
         turn_id: String,
     },
     StartCodex {
-        pane_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pane_id: Option<String>,
         thread_id: String,
         turn_id: String,
-        window_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        window_name: Option<String>,
     },
 }
 

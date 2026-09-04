@@ -126,17 +126,17 @@ export type DeleteWorldResult = { world_id: Uuid };
 export type StartCodexResult = {
   thread_id: string;
   turn_id: string;
-  pane_id: string;
-  window_name: string;
+  pane_id?: string;
+  window_name?: string;
 };
 
 export type InspectCodexResult = {
   thread_id: string;
   status: "active" | "idle" | "error";
   active_turn_id?: string;
-  pane_id: string;
-  window_name: string;
-  screen: string;
+  pane_id?: string;
+  window_name?: string;
+  screen?: string;
   observed_at_unix_ms: Int64;
 };
 

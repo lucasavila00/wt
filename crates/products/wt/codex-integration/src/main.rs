@@ -1,7 +1,9 @@
 mod app_server;
+mod completion;
 mod focus;
 mod install;
 mod runtime;
+mod tracking;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -43,13 +45,9 @@ enum Command {
     /// Steer an active turn or start the next turn.
     #[command(hide = true)]
     RuntimeSend { thread_id: String },
-    /// Forward one Codex turn completion to the WT guest relay.
+    /// Reconcile tracked Codex threads and retry durable completion deliveries.
     #[command(hide = true)]
-    WatchTurn {
-        thread_id: String,
-        turn_id: String,
-        pane_id: String,
-    },
+    WatchTurns,
 }
 
 #[allow(dead_code)]
@@ -86,11 +84,7 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
             let message = read_stdin()?;
             print_json(&runtime::send(&real_codex()?, &thread_id, &message)?)?;
         }
-        Command::WatchTurn {
-            thread_id,
-            turn_id,
-            pane_id,
-        } => runtime::watch(&real_codex()?, &thread_id, &turn_id, &pane_id)?,
+        Command::WatchTurns => tracking::watch(&real_codex()?)?,
     }
     Ok(())
 }

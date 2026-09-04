@@ -600,11 +600,8 @@
       },
       "required": [
         "observed_at_unix_ms",
-        "pane_id",
-        "screen",
         "status",
-        "thread_id",
-        "window_name"
+        "thread_id"
       ],
       "additionalProperties": false
     },
@@ -710,10 +707,8 @@
         }
       },
       "required": [
-        "pane_id",
         "thread_id",
-        "turn_id",
-        "window_name"
+        "turn_id"
       ],
       "additionalProperties": false
     },

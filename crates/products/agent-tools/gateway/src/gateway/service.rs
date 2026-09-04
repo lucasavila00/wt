@@ -104,7 +104,7 @@ impl Gateway {
                     authorized.world_id,
                     &thread_id,
                     &turn_id,
-                    &pane_id,
+                    pane_id.as_deref(),
                     status,
                     &message,
                 ) {
@@ -224,7 +224,12 @@ impl Gateway {
             ..
         } = &request.operation
         {
-            if thread_id.is_empty() || turn_id.is_empty() || !crate::valid_byobu_pane_id(pane_id) {
+            if thread_id.is_empty()
+                || turn_id.is_empty()
+                || pane_id
+                    .as_deref()
+                    .is_some_and(|pane| !crate::valid_byobu_pane_id(pane))
+            {
                 bail!("invalid Codex turn identity");
             }
         }

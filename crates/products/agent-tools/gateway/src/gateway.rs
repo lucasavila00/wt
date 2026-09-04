@@ -74,7 +74,7 @@ impl ActivityRecorder {
         world_id: WorldId,
         thread_id: &str,
         turn_id: &str,
-        pane_id: &str,
+        pane_id: Option<&str>,
         status: crate::CodexTurnStatus,
         message: &str,
     ) -> Result<()> {

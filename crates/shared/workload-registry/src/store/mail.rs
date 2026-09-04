@@ -30,7 +30,7 @@ impl Store {
         world_id: WorldId,
         thread_id: &str,
         turn_id: &str,
-        pane_id: &str,
+        pane_id: Option<&str>,
         kind: MailKind,
         message: &str,
     ) -> Result<WorldMail, StoreError> {

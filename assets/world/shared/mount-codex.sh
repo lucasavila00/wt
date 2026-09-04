@@ -68,3 +68,50 @@ if test -e "$auth" && ! test -L "$auth"; then
 fi
 ln -sfn "$auth_mount/auth.json" "$auth"
 test -r "$auth"
+
+# Start only after persistent history and shared authentication are mounted.
+install -d -m 0700 -o wt -g wt /home/wt/.local/state/wt/codex
+cat > /etc/systemd/system/wt-codex-app-server.service <<'EOF'
+[Unit]
+Description=WT Codex App Server
+RequiresMountsFor=/home/wt/.codex/sessions /run/wt-codex-integration-auth
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=wt
+Environment=HOME=/home/wt
+Environment=CODEX_HOME=/home/wt/.codex
+WorkingDirectory=/home/wt
+ExecStart=/home/wt/.codex/packages/standalone/current/bin/codex app-server --listen unix:///home/wt/.local/state/wt/codex/app-server.sock
+Restart=always
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/wt-codex-completions.service <<'EOF'
+[Unit]
+Description=WT Codex completion recovery
+RequiresMountsFor=/home/wt/.codex/sessions /run/wt-codex-integration-auth
+Wants=wt-codex-app-server.service wt-agent-tool-gateway-relay.service
+After=wt-codex-app-server.service wt-agent-tool-gateway-relay.service
+StartLimitIntervalSec=0
+
+[Service]
+User=wt
+Environment=HOME=/home/wt
+Environment=CODEX_HOME=/home/wt/.codex
+WorkingDirectory=/home/wt
+ExecStart=/usr/local/bin/wtg codex watch-turns
+Restart=always
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now wt-codex-app-server.service wt-codex-completions.service

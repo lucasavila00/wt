@@ -507,21 +507,21 @@ defmodule WtApi.Result.StartCodex do
   @moduledoc false
   alias WtApi.Generated.Decoder
 
-  @enforce_keys [:pane_id, :thread_id, :turn_id, :window_name]
+  @enforce_keys [:thread_id, :turn_id]
   defstruct pane_id: nil, thread_id: nil, turn_id: nil, window_name: nil
 
   @type t :: %__MODULE__{
-          pane_id: String.t(),
+          pane_id: String.t() | nil,
           thread_id: String.t(),
           turn_id: String.t(),
-          window_name: String.t()
+          window_name: String.t() | nil
         }
 
   @schema %{
-    pane_id: {:required, :string},
+    pane_id: {:optional, :string},
     thread_id: {:required, :string},
     turn_id: {:required, :string},
-    window_name: {:required, :string}
+    window_name: {:optional, :string}
   }
 
   @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
@@ -532,7 +532,7 @@ defmodule WtApi.Result.InspectCodex do
   @moduledoc false
   alias WtApi.Generated.Decoder
 
-  @enforce_keys [:observed_at_unix_ms, :pane_id, :screen, :status, :thread_id, :window_name]
+  @enforce_keys [:observed_at_unix_ms, :status, :thread_id]
   defstruct active_turn_id: nil,
             observed_at_unix_ms: nil,
             pane_id: nil,
@@ -544,21 +544,21 @@ defmodule WtApi.Result.InspectCodex do
   @type t :: %__MODULE__{
           active_turn_id: String.t() | nil,
           observed_at_unix_ms: integer(),
-          pane_id: String.t(),
-          screen: String.t(),
+          pane_id: String.t() | nil,
+          screen: String.t() | nil,
           status: String.t(),
           thread_id: String.t(),
-          window_name: String.t()
+          window_name: String.t() | nil
         }
 
   @schema %{
     active_turn_id: {:optional, :string},
     observed_at_unix_ms: {:required, :integer},
-    pane_id: {:required, :string},
-    screen: {:required, :string},
+    pane_id: {:optional, :string},
+    screen: {:optional, :string},
     status: {:required, {:enum, ["active", "error", "idle"]}},
     thread_id: {:required, :string},
-    window_name: {:required, :string}
+    window_name: {:optional, :string}
   }
 
   @spec decode(map()) :: {:ok, t()} | {:error, String.t()}

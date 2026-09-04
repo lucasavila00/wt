@@ -18,8 +18,8 @@ impl WorldWorker for UnusedWorker {
         Ok(wt_guest::CodexStart {
             thread_id: "thread-123".into(),
             turn_id: "turn-456".into(),
-            pane_id: "%7".into(),
-            window_name: "codex-thread-123".into(),
+            pane_id: Some("%7".into()),
+            window_name: Some("codex-thread-123".into()),
         })
     }
 
@@ -31,9 +31,9 @@ impl WorldWorker for UnusedWorker {
         Ok(wt_guest::CodexInspection {
             status: wt_guest::CodexRuntimeStatus::Active,
             active_turn_id: Some("turn-456".into()),
-            pane_id: "%7".into(),
-            window_name: "codex-thread-123".into(),
-            screen: "working".into(),
+            pane_id: Some("%7".into()),
+            window_name: Some("codex-thread-123".into()),
+            screen: Some("working".into()),
             observed_at_unix_ms: 1_800_000_000_000,
         })
     }
@@ -47,9 +47,9 @@ impl WorldWorker for UnusedWorker {
         Ok(wt_guest::CodexInspection {
             status: wt_guest::CodexRuntimeStatus::Idle,
             active_turn_id: None,
-            pane_id: "%8".into(),
-            window_name: "codex".into(),
-            screen: "resumed".into(),
+            pane_id: Some("%8".into()),
+            window_name: Some("codex".into()),
+            screen: Some("resumed".into()),
             observed_at_unix_ms: 1_800_000_000_001,
         })
     }
@@ -300,8 +300,8 @@ fn api_controls_an_ephemeral_codex_session() {
     };
     assert_eq!(thread_id, "thread-123");
     assert_eq!(turn_id, "turn-456");
-    assert_eq!(pane_id, "%7");
-    assert_eq!(window_name, "codex-thread-123");
+    assert_eq!(pane_id.as_deref(), Some("%7"));
+    assert_eq!(window_name.as_deref(), Some("codex-thread-123"));
 
     let inspected = service.execute_api_read(
         "owner",
@@ -320,7 +320,7 @@ fn api_controls_an_ephemeral_codex_session() {
                 ref active_turn_id,
                 ref screen,
                 ..
-            } if active_turn_id.as_deref() == Some("turn-456") && screen == "working")
+            } if active_turn_id.as_deref() == Some("turn-456") && screen.as_deref() == Some("working"))
     ));
 
     let resume_id = uuid::Uuid::new_v4();
@@ -340,7 +340,7 @@ fn api_controls_an_ephemeral_codex_session() {
         if matches!(response.as_ref(), Response::CodexInspection {
             status: wt_control_protocol::CodexStatus::Idle, active_turn_id: None,
             pane_id, ..
-        } if pane_id == "%8")
+        } if pane_id.as_deref() == Some("%8"))
     ));
     let replay = service.execute_api_mutation(
         "owner",
@@ -385,6 +385,40 @@ fn api_controls_an_ephemeral_codex_session() {
         .unwrap()
         .messages
         .is_empty());
+
+    // A lost guest response may follow accepted work. Persist uncertainty instead of
+    // freeing the reservation for another submission of the same mutation.
+    let uncertain_id = uuid::Uuid::new_v4();
+    let uncertain = service.execute_api_mutation(
+        "owner",
+        uncertain_id,
+        Some(&"d".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "fail".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(&uncertain.outcome, Outcome::Error { error }
+        if error.code == ErrorCode::Backend && !error.retryable));
+    assert!(uncertain.expires_at_unix_ms.is_some());
+    // The worker would succeed for this message if replay accidentally ran it again.
+    let replay = service.execute_api_mutation(
+        "owner",
+        uncertain_id,
+        Some(&"d".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert_eq!(
+        serde_json::to_value(uncertain).unwrap(),
+        serde_json::to_value(replay).unwrap()
+    );
 }
 
 #[test]

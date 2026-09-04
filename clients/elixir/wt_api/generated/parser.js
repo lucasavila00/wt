@@ -172,11 +172,11 @@ const direct_hoist_43 = new AnyOfConstsRuntype(undefined, [
 const direct_hoist_44 = new ObjectRuntype(undefined, {
     "active_turn_id": new OptionalFieldRuntype(direct_hoist_27),
     "observed_at_unix_ms": direct_hoist_38,
-    "pane_id": direct_hoist_27,
-    "screen": direct_hoist_27,
+    "pane_id": new OptionalFieldRuntype(direct_hoist_27),
+    "screen": new OptionalFieldRuntype(direct_hoist_27),
     "status": direct_hoist_43,
     "thread_id": direct_hoist_27,
-    "window_name": direct_hoist_27
+    "window_name": new OptionalFieldRuntype(direct_hoist_27)
 }, []);
 const direct_hoist_45 = new NumberWithFormatRuntype(undefined, [
     "Int64"
@@ -289,10 +289,10 @@ const direct_hoist_63 = new ObjectRuntype(undefined, {
     "world_id": direct_hoist_28
 }, []);
 const direct_hoist_64 = new ObjectRuntype(undefined, {
-    "pane_id": direct_hoist_27,
+    "pane_id": new OptionalFieldRuntype(direct_hoist_27),
     "thread_id": direct_hoist_27,
     "turn_id": direct_hoist_27,
-    "window_name": direct_hoist_27
+    "window_name": new OptionalFieldRuntype(direct_hoist_27)
 }, []);
 const direct_hoist_65 = new ConstRuntype(undefined, "ok");
 const direct_hoist_66 = new RefRuntype(undefined, "Result");

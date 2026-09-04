@@ -93,6 +93,15 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    codex_result_deliveries (world_id, thread_id, turn_id) {
+        world_id -> Text,
+        thread_id -> Text,
+        turn_id -> Text,
+        mail_id -> BigInt,
+    }
+}
+
 diesel::joinable!(agent_tool_reports -> worlds (world_id));
 diesel::joinable!(world_git_activity -> repositories (repository_id));
 diesel::joinable!(world_git_activity -> worlds (world_id));

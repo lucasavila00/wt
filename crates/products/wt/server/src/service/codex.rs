@@ -148,5 +148,10 @@ fn active_operation() -> ApiError {
 }
 
 fn worker_error(error: wt_libvirt_kvm::WorkerError) -> ApiError {
-    ApiError::new(ErrorCode::Backend, error.to_string()).retryable()
+    // Codex may have accepted work before a response was lost. Do not release the
+    // mutation reservation and blindly submit it again with the same request ID.
+    ApiError::new(
+        ErrorCode::Backend,
+        format!("{error}; inspect the thread before submitting new work"),
+    )
 }
