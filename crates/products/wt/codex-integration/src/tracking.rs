@@ -149,7 +149,7 @@ fn poll_thread(
     Ok(())
 }
 
-pub(crate) fn watch(codex: &Path) -> Result<()> {
+pub(crate) fn watch() -> Result<()> {
     let directory = directory()?;
     let lock = File::create(directory.join("worker.lock"))?;
     lock.try_lock()
@@ -167,7 +167,7 @@ pub(crate) fn watch(codex: &Path) -> Result<()> {
                 let mut tracked = serde_json::from_reader(File::open(&path)?)?;
                 drain_pending(&path, &mut tracked, Path::new(RELAY_SOCKET))?;
                 if connection.is_none() {
-                    connection = Some(Connection::open(codex.as_os_str())?);
+                    connection = Some(Connection::open()?);
                     subscribed.clear();
                 }
                 poll_thread(

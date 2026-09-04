@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
-use std::ffi::OsStr;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -32,7 +31,7 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    pub(crate) fn open(_codex: &OsStr) -> Result<Self> {
+    pub(crate) fn open() -> Result<Self> {
         let stream = UnixStream::connect(state_dir()?.join("app-server.sock"))
             .context("connect to wt-codex-app-server.service")?;
         stream.set_read_timeout(Some(RPC_TIMEOUT))?;

@@ -2,7 +2,6 @@ use crate::app_server::{Connection, Rpc};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -64,10 +63,10 @@ struct Pane {
     window_name: String,
 }
 
-pub(crate) fn start(codex: &Path, message: &str) -> Result<StartOutput> {
-    let mut rpc = Connection::open(codex.as_os_str())?;
+pub(crate) fn start(message: &str) -> Result<StartOutput> {
+    let mut rpc = Connection::open()?;
     let thread_id = start_thread(&mut rpc)?;
-    let pane = optional_pane(create_pane(codex, &thread_id));
+    let pane = optional_pane(create_pane(&thread_id));
     crate::tracking::register(&mut rpc, &thread_id)?;
     let turn_id = start_turn(&mut rpc, &thread_id, message)?;
     Ok(StartOutput {
@@ -78,8 +77,8 @@ pub(crate) fn start(codex: &Path, message: &str) -> Result<StartOutput> {
     })
 }
 
-pub(crate) fn inspect(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
-    let mut rpc = Connection::open(codex.as_os_str())?;
+pub(crate) fn inspect(thread_id: &str) -> Result<InspectOutput> {
+    let mut rpc = Connection::open()?;
     let state = inspect_thread(&mut rpc, thread_id)?;
     let pane = optional_pane(find_pane(thread_id));
     let screen = pane
@@ -95,16 +94,16 @@ pub(crate) fn inspect(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
     })
 }
 
-pub(crate) fn resume(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
-    let mut rpc = Connection::open(codex.as_os_str())?;
+pub(crate) fn resume(thread_id: &str) -> Result<InspectOutput> {
+    let mut rpc = Connection::open()?;
     crate::tracking::register(&mut rpc, thread_id)?;
     rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
-    optional_pane(find_pane(thread_id).or_else(|_| create_pane(codex, thread_id)));
-    inspect(codex, thread_id)
+    optional_pane(find_pane(thread_id).or_else(|_| create_pane(thread_id)));
+    inspect(thread_id)
 }
 
-pub(crate) fn send(codex: &Path, thread_id: &str, message: &str) -> Result<SendOutput> {
-    let mut rpc = Connection::open(codex.as_os_str())?;
+pub(crate) fn send(thread_id: &str, message: &str) -> Result<SendOutput> {
+    let mut rpc = Connection::open()?;
     crate::tracking::register(&mut rpc, thread_id)?;
     rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
     let output = send_message(&mut rpc, thread_id, message)?;
@@ -209,7 +208,8 @@ fn parse_thread_state(thread: &Value) -> Result<ThreadState> {
     })
 }
 
-fn create_pane(codex: &Path, thread_id: &str) -> Result<Pane> {
+fn create_pane(thread_id: &str) -> Result<Pane> {
+    let codex = crate::real_codex()?;
     ensure_tmux_session()?;
     let output = Command::new(TMUX)
         .args([

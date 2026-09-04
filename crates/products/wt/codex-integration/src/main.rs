@@ -72,19 +72,19 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
         } => println!("{}", focus::focus(&tmux_session, &pane_id)?),
         Command::RuntimeStart => {
             let message = read_stdin()?;
-            print_json(&runtime::start(&real_codex()?, &message)?)?;
+            print_json(&runtime::start(&message)?)?;
         }
         Command::RuntimeInspect { thread_id } => {
-            print_json(&runtime::inspect(&real_codex()?, &thread_id)?)?;
+            print_json(&runtime::inspect(&thread_id)?)?;
         }
         Command::RuntimeResume { thread_id } => {
-            print_json(&runtime::resume(&real_codex()?, &thread_id)?)?;
+            print_json(&runtime::resume(&thread_id)?)?;
         }
         Command::RuntimeSend { thread_id } => {
             let message = read_stdin()?;
-            print_json(&runtime::send(&real_codex()?, &thread_id, &message)?)?;
+            print_json(&runtime::send(&thread_id, &message)?)?;
         }
-        Command::WatchTurns => tracking::watch(&real_codex()?)?,
+        Command::WatchTurns => tracking::watch()?,
     }
     Ok(())
 }
