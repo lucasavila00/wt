@@ -36,6 +36,10 @@ defmodule WtApiTest do
     %{client: client}
   end
 
+  test "uses wt from PATH by default" do
+    assert %Client{executable: "wt", env: []} = Client.new()
+  end
+
   test "all v1 operations cross the real wt api binary", %{client: client} do
     assert {:ok,
             %Success{

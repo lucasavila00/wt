@@ -1,7 +1,6 @@
 defmodule WtApi.Client do
   @moduledoc "Configuration for invoking the local `wt api` command."
 
-  @enforce_keys [:executable]
   defstruct executable: "wt", env: []
 
   @type t :: %__MODULE__{
