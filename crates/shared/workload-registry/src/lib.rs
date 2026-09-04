@@ -267,14 +267,14 @@ mod tests {
     }
 
     #[test]
-    fn mailbox_migration_preserves_existing_agent_tool_reports() {
+    fn fresh_schema_supports_mail_and_preserves_feedback_on_reopen() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("registry.db");
         let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
         connection
             .batch_execute("PRAGMA foreign_keys = ON;")
             .unwrap();
-        connection.run_next_migration(MIGRATIONS).unwrap();
+        connection.run_pending_migrations(MIGRATIONS).unwrap();
         let world_id = WorldId::new();
         diesel::insert_into(worlds::table)
             .values((
@@ -308,10 +308,10 @@ mod tests {
         assert_eq!(reports[0].description, "keep me");
         assert_eq!(
             registry
-                .insert_world_mail(world_id, "migration completed")
+                .insert_world_mail(world_id, "hello")
                 .unwrap()
                 .message,
-            "migration completed"
+            "hello"
         );
     }
 

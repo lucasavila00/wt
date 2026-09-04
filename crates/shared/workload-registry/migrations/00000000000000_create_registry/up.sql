@@ -69,3 +69,38 @@ CREATE INDEX world_wt_tools_activity_target_branch_id
     ON world_wt_tools_activity (repository_id, branch, id DESC);
 CREATE INDEX world_wt_tools_activity_target_change_request_id
     ON world_wt_tools_activity (repository_id, change_request, id DESC);
+
+CREATE TABLE server_metadata (
+    singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+    server_id TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE api_mutation_results (
+    owner TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_json TEXT CHECK (response_json IS NULL OR json_valid(response_json)),
+    expires_at_unix_ms BIGINT NOT NULL,
+    preserve_on_restart BOOLEAN NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner, request_id)
+);
+
+CREATE INDEX api_mutation_results_expiration
+    ON api_mutation_results (expires_at_unix_ms);
+
+CREATE TABLE world_mail (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    world_id            TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
+    created_at_unix_ms  BIGINT NOT NULL,
+    message             TEXT NOT NULL
+);
+
+CREATE INDEX world_mail_world_id_id ON world_mail(world_id, id);
+
+CREATE TABLE codex_result_deliveries (
+    world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
+    thread_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    mail_id BIGINT NOT NULL REFERENCES world_mail(id) ON DELETE CASCADE,
+    PRIMARY KEY (world_id, thread_id, turn_id)
+);
