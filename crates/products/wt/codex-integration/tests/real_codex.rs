@@ -2,6 +2,7 @@
 #[path = "support/reject_provider.rs"]
 mod reject_provider;
 use serde_json::{json, Value};
+use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -181,6 +182,39 @@ fn documented_unix_transport_reads_and_resumes_a_real_thread() {
         String::from_utf8_lossy(&inspected.stderr)
     );
     let inspected: Value = serde_json::from_slice(&inspected.stdout).unwrap();
-    assert_eq!(inspected["status"], "idle");
+    assert_eq!(inspected["status"], "error");
     assert!(inspected["pane_id"].is_null());
+
+    // A failed turn is not an unusable thread. An explicit new message may continue it.
+    let mut sent = Command::new(env!("CARGO_BIN_EXE_wt-codex-integration"))
+        .args(["runtime-send", thread])
+        .env("HOME", root.path())
+        .env("CODEX_HOME", root.path().join(".codex"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    sent.stdin
+        .take()
+        .unwrap()
+        .write_all(b"explicit continuation")
+        .unwrap();
+    let sent = sent.wait_with_output().unwrap();
+    assert!(
+        sent.status.success(),
+        "{}",
+        String::from_utf8_lossy(&sent.stderr)
+    );
+    let sent: Value = serde_json::from_slice(&sent.stdout).unwrap();
+    assert_eq!(sent["delivery"], "started");
+    assert_ne!(sent["turn_id"], turn_id);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while provider.requests() < 2 {
+        assert!(
+            Instant::now() < deadline,
+            "explicit continuation did not reach local fixture"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

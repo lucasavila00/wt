@@ -154,7 +154,7 @@ fn poll_thread(
         save(path, &tracked, false)?;
         drain_pending(path, &mut tracked, relay)?;
     }
-    if status == Some("idle") && subscribed.remove(&tracked.thread_id) {
+    if matches!(status, Some("idle" | "systemError")) && subscribed.remove(&tracked.thread_id) {
         rpc.call(
             "thread/unsubscribe",
             json!({ "threadId": tracked.thread_id }),

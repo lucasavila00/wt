@@ -162,7 +162,7 @@ fn send_message(rpc: &mut impl Rpc, thread_id: &str, message: &str) -> Result<Se
                 delivery: MessageDelivery::Steered,
             })
         }
-        (RuntimeStatus::Idle, _) => {
+        (RuntimeStatus::Idle | RuntimeStatus::Error, _) => {
             rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
             let result = rpc.call("turn/start", text_turn_params(thread_id, message))?;
             Ok(SendOutput {
@@ -170,7 +170,6 @@ fn send_message(rpc: &mut impl Rpc, thread_id: &str, message: &str) -> Result<Se
                 delivery: MessageDelivery::Started,
             })
         }
-        (RuntimeStatus::Error, _) => bail!("Codex thread is in an error state: {thread_id}"),
         (RuntimeStatus::Active, None) => bail!("active Codex thread has no active turn"),
     }
 }
