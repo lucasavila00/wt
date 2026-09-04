@@ -49,6 +49,16 @@ pub(super) enum Request {
         request_id: String,
         world_id: String,
     },
+    #[serde(rename = "resume_codex")]
+    ResumeCodex {
+        api_version: u32,
+        context: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_server_id: Option<String>,
+        request_id: String,
+        thread_id: String,
+        world_id: String,
+    },
     #[serde(rename = "send_codex_message")]
     SendCodexMessage {
         api_version: u32,

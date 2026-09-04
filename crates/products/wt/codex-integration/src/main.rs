@@ -37,6 +37,9 @@ enum Command {
     /// Inspect a managed Codex thread and its visible Byobu window.
     #[command(hide = true)]
     RuntimeInspect { thread_id: String },
+    /// Resume a persisted Codex thread and reopen its visible window if needed.
+    #[command(hide = true)]
+    RuntimeResume { thread_id: String },
     /// Steer an active turn or start the next turn.
     #[command(hide = true)]
     RuntimeSend { thread_id: String },
@@ -75,6 +78,9 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
         }
         Command::RuntimeInspect { thread_id } => {
             print_json(&runtime::inspect(&real_codex()?, &thread_id)?)?;
+        }
+        Command::RuntimeResume { thread_id } => {
+            print_json(&runtime::resume(&real_codex()?, &thread_id)?)?;
         }
         Command::RuntimeSend { thread_id } => {
             let message = read_stdin()?;

@@ -17,6 +17,9 @@ Version 1 exposes these operations:
 - `inspect_codex` returns the thread's current status, active turn ID, pane metadata, and captured
   terminal screen.
 - `send_codex_message` steers the active turn or starts the thread's next turn.
+- `resume_codex` resumes a persisted thread and restores its visible window without starting a
+  turn. It accepts `world_id` and `thread_id` and returns the inspection result shape. As a
+  mutation, it uses request-ID replay; a later restart needs a new request ID.
 - `read_world_mail` reads a bounded cursor page from a world's mailbox.
 
 Deleting an already absent world succeeds. ADR 0084 defines mailbox behavior, and ADR 0086 defines

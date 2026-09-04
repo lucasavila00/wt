@@ -63,6 +63,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::CreateWorld(_)
                 | Operation::DeleteWorld { .. }
                 | Operation::StartCodex { .. }
+                | Operation::ResumeCodex { .. }
                 | Operation::SendCodexMessage { .. }
         ) {
             return ApiResponse::error(ApiError::new(

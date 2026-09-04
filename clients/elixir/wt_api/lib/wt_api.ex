@@ -57,6 +57,22 @@ defmodule WtApi do
     )
   end
 
+  @doc "Resume a persisted thread and restore its visible window without starting a turn."
+  @spec resume_codex(Request.ResumeCodex.t()) ::
+          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
+  def resume_codex(request), do: resume_codex(Client.new(), request)
+
+  @spec resume_codex(Client.t(), Request.ResumeCodex.t()) ::
+          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
+  def resume_codex(client, %Request.ResumeCodex{} = request) do
+    call(
+      client,
+      request,
+      Result.InspectCodex,
+      &equal_identity(&1.thread_id, request.thread_id, "thread ID")
+    )
+  end
+
   @spec send_codex_message(Request.SendCodexMessage.t()) ::
           {:ok, Success.t(Result.SendCodexMessage.t())} | {:error, error()}
   def send_codex_message(request), do: send_codex_message(Client.new(), request)

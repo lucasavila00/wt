@@ -240,6 +240,43 @@ defmodule WtApi.Request.InspectCodex do
   def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
 end
 
+defmodule WtApi.Request.ResumeCodex do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:context, :request_id, :thread_id, :world_id]
+  defstruct api_version: 1,
+            context: nil,
+            expected_server_id: nil,
+            operation: "resume_codex",
+            request_id: nil,
+            thread_id: nil,
+            world_id: nil
+
+  @type t :: %__MODULE__{
+          api_version: number(),
+          context: String.t(),
+          expected_server_id: String.t() | nil,
+          operation: String.t(),
+          request_id: String.t(),
+          thread_id: String.t(),
+          world_id: String.t()
+        }
+
+  @schema %{
+    api_version: {:required, {:const, 1}},
+    context: {:required, :string},
+    expected_server_id: {:optional, :uuid},
+    operation: {:required, {:const, "resume_codex"}},
+    request_id: {:required, :uuid},
+    thread_id: {:required, :string},
+    world_id: {:required, :uuid}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
 defmodule WtApi.Request.SendCodexMessage do
   @moduledoc false
   alias WtApi.Generated.Decoder

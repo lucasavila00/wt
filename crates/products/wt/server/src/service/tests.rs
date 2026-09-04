@@ -38,6 +38,22 @@ impl WorldWorker for UnusedWorker {
         })
     }
 
+    fn resume_codex(
+        &self,
+        _world_id: WorldId,
+        thread_id: &str,
+    ) -> Result<wt_guest::CodexInspection, WorkerError> {
+        assert_eq!(thread_id, "thread-123");
+        Ok(wt_guest::CodexInspection {
+            status: wt_guest::CodexRuntimeStatus::Idle,
+            active_turn_id: None,
+            pane_id: "%8".into(),
+            window_name: "codex".into(),
+            screen: "resumed".into(),
+            observed_at_unix_ms: 1_800_000_000_001,
+        })
+    }
+
     fn send_codex_message(
         &self,
         _world_id: WorldId,
@@ -306,6 +322,42 @@ fn api_controls_an_ephemeral_codex_session() {
                 ..
             } if active_turn_id.as_deref() == Some("turn-456") && screen == "working")
     ));
+
+    let resume_id = uuid::Uuid::new_v4();
+    let resume = || Operation::ResumeCodex {
+        world_id,
+        thread_id: thread_id.clone(),
+    };
+    let resumed = service.execute_api_mutation(
+        "owner",
+        resume_id,
+        Some(&"c".repeat(64)),
+        None,
+        resume(),
+        &mut std::io::sink(),
+    );
+    assert!(matches!(&resumed.outcome, Outcome::Ok { response }
+        if matches!(response.as_ref(), Response::CodexInspection {
+            status: wt_control_protocol::CodexStatus::Idle, active_turn_id: None,
+            pane_id, ..
+        } if pane_id == "%8")
+    ));
+    let replay = service.execute_api_mutation(
+        "owner",
+        resume_id,
+        Some(&"c".repeat(64)),
+        None,
+        resume(),
+        &mut std::io::sink(),
+    );
+    assert_eq!(
+        serde_json::to_value(&resumed).unwrap(),
+        serde_json::to_value(&replay).unwrap()
+    );
+    let read = service.execute_api_read("owner", uuid::Uuid::new_v4(), None, resume());
+    assert!(
+        matches!(read.outcome, Outcome::Error { error } if error.code == ErrorCode::InvalidRequest)
+    );
 
     let sent = service.execute_api_mutation(
         "owner",

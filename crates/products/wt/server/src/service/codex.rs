@@ -36,16 +36,37 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         world_id: WorldId,
         thread_id: &str,
     ) -> Result<Response, ApiError> {
+        self.codex_inspection(owner, world_id, thread_id, false)
+    }
+
+    pub(super) fn resume_codex(
+        &self,
+        owner: &str,
+        world_id: WorldId,
+        thread_id: &str,
+    ) -> Result<Response, ApiError> {
+        self.codex_inspection(owner, world_id, thread_id, true)
+    }
+
+    fn codex_inspection(
+        &self,
+        owner: &str,
+        world_id: WorldId,
+        thread_id: &str,
+        resume: bool,
+    ) -> Result<Response, ApiError> {
         validate_thread_id(thread_id)?;
         let _operation = self
             .operations
             .try_lock_world(world_id)
             .ok_or_else(active_operation)?;
         self.require_running_world(owner, world_id)?;
-        let inspection = self
-            .worker
-            .inspect_codex(world_id, thread_id)
-            .map_err(worker_error)?;
+        let inspection = if resume {
+            self.worker.resume_codex(world_id, thread_id)
+        } else {
+            self.worker.inspect_codex(world_id, thread_id)
+        }
+        .map_err(worker_error)?;
         Ok(Response::CodexInspection {
             thread_id: thread_id.to_owned(),
             status: match inspection.status {

@@ -94,6 +94,15 @@ defmodule WtApiTest do
              })
 
     assert {:ok,
+            %Success{result: %Result.InspectCodex{thread_id: "thread-123", status: "active"}}} =
+             WtApi.resume_codex(client, %Request.ResumeCodex{
+               request_id: @request_id,
+               context: "ars",
+               world_id: @world_id,
+               thread_id: "thread-123"
+             })
+
+    assert {:ok,
             %Success{
               result: %Result.SendCodexMessage{
                 thread_id: "thread-123",
@@ -292,7 +301,7 @@ defmodule WtApiTest do
       *'"operation":"start_codex"'*)
         printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_started","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123"}}'
         ;;
-      *'"operation":"inspect_codex"'*)
+      *'"operation":"inspect_codex"'*|*'"operation":"resume_codex"'*)
         printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_inspection","thread_id":"thread-123","status":"active","active_turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123","screen":"Codex is working","observed_at_unix_ms":1800000000000}}'
         ;;
       *'"operation":"send_codex_message"'*)

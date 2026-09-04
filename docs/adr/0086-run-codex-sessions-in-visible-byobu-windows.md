@@ -35,8 +35,17 @@ owner and world before asking that world's guest runtime to resolve the thread.
 
 App Server owns live thread and turn state. Each Byobu pane carries its thread ID as a tmux option,
 which lets WT find and capture the corresponding native TUI. A `wts` restart leaves this guest-local
-state running. A guest restart ends the runtime generation; a controller treats a thread without
-its pane as ended and may start a new visible session.
+state running. A guest restart ends the live runtime generation, but per-world Codex thread
+history persists (ADR 0082). The explicit `resume_codex` mutation loads a retained thread ID and
+reopens its visible pane when absent. It returns the same state and screen shape as inspection,
+without submitting a message, starting a turn, or interrupting an active turn. A repeated call
+reuses a live pane. Send remains a separate operation after recovery. Inspection remains
+read-only and reports a missing pane until recovery. This does not resume an interrupted turn or
+reconstruct a completion that its watcher did not deliver before restart.
+
+Resume requires a running world and the normal expected-server identity check and per-world
+operation lock. Request-ID replay returns the original result; use a new request ID for a later
+restart. Missing thread history is an error, never an implicit replacement conversation.
 
 The controller retains its durable association between its task or sub-session and the Codex
 thread ID. The WT registry stores world resources and mailbox entries.

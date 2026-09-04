@@ -22,6 +22,7 @@ impl Request {
             | Self::DeleteWorld { api_version, .. }
             | Self::StartCodex { api_version, .. }
             | Self::InspectCodex { api_version, .. }
+            | Self::ResumeCodex { api_version, .. }
             | Self::SendCodexMessage { api_version, .. }
             | Self::ReadWorldMail { api_version, .. } => *api_version,
         }
@@ -33,6 +34,7 @@ impl Request {
             | Self::DeleteWorld { request_id, .. }
             | Self::StartCodex { request_id, .. }
             | Self::InspectCodex { request_id, .. }
+            | Self::ResumeCodex { request_id, .. }
             | Self::SendCodexMessage { request_id, .. }
             | Self::ReadWorldMail { request_id, .. } => request_id,
         }
@@ -50,6 +52,9 @@ impl Request {
                 expected_server_id, ..
             }
             | Self::InspectCodex {
+                expected_server_id, ..
+            }
+            | Self::ResumeCodex {
                 expected_server_id, ..
             }
             | Self::SendCodexMessage {
@@ -290,6 +295,20 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
         } => Ok((
             context,
             Operation::InspectCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+            },
+        )),
+        Request::ResumeCodex {
+            context,
+            world_id,
+            thread_id,
+            ..
+        } => Ok((
+            context,
+            Operation::ResumeCodex {
                 world_id: world_id
                     .parse()
                     .map_err(|_| "invalid world ID".to_owned())?,

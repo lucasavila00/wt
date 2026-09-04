@@ -98,6 +98,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 world_id,
                 thread_id,
             } => self.inspect_codex(owner, world_id, &thread_id),
+            Operation::ResumeCodex {
+                world_id,
+                thread_id,
+            } => self.resume_codex(owner, world_id, &thread_id),
             Operation::SendCodexMessage {
                 world_id,
                 thread_id,

@@ -61,6 +61,9 @@ Each world uses one guest-local Codex App Server daemon. WT runs the native Code
 App Server owns live thread and turn state, and a tmux pane option associates each visible TUI with
 its thread. Start, inspect, and send operations use that guest runtime; WT-started turns publish
 their terminal result through the durable world mailbox.
+After a guest restart, `resume_codex` reopens a persisted thread's missing visible window and
+resumes its history without submitting a message. Send remains separate; resume does not create a
+replacement thread or restore the interrupted turn.
 
 ## Shell playback
 

@@ -137,6 +137,7 @@ pub enum Operation {
     DeleteWorld { world_id: WorldId },
     StartCodex { world_id: WorldId, message: String },
     InspectCodex { world_id: WorldId, thread_id: String },
+    ResumeCodex { world_id: WorldId, thread_id: String },
     SendCodexMessage { world_id: WorldId, thread_id: String, message: String },
     ListAgentToolReports,
     ClearAgentToolReports,

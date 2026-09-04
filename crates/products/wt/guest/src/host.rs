@@ -68,6 +68,14 @@ impl<P: MachineProvider> Worker<P> {
         self.run_codex_runtime(world_id, &["runtime-inspect", thread_id], None)
     }
 
+    pub fn resume_codex(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+    ) -> Result<CodexInspection, WorkerError> {
+        self.run_codex_runtime(world_id, &["runtime-resume", thread_id], None)
+    }
+
     pub fn send_codex_message(
         &self,
         world_id: WorldId,
@@ -130,6 +138,14 @@ impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
         thread_id: &str,
     ) -> Result<CodexInspection, WorkerError> {
         Self::inspect_codex(self, world_id, thread_id)
+    }
+
+    fn resume_codex(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+    ) -> Result<CodexInspection, WorkerError> {
+        Self::resume_codex(self, world_id, thread_id)
     }
 
     fn send_codex_message(

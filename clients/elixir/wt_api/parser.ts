@@ -8,6 +8,7 @@ export const Codecs = parse.buildParsers<{
   DeleteWorldRequest: Api.DeleteWorldRequest;
   StartCodexRequest: Api.StartCodexRequest;
   InspectCodexRequest: Api.InspectCodexRequest;
+  ResumeCodexRequest: Api.ResumeCodexRequest;
   SendCodexMessageRequest: Api.SendCodexMessageRequest;
   ReadWorldMailRequest: Api.ReadWorldMailRequest;
   SshAccess: Api.SshAccess;

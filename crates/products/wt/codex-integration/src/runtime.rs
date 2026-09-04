@@ -99,6 +99,13 @@ pub(crate) fn inspect(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
     })
 }
 
+pub(crate) fn resume(codex: &Path, thread_id: &str) -> Result<InspectOutput> {
+    let mut rpc = Connection::open(codex.as_os_str())?;
+    rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
+    find_pane(thread_id).or_else(|_| create_pane(codex, thread_id))?;
+    inspect(codex, thread_id)
+}
+
 pub(crate) fn send(codex: &Path, thread_id: &str, message: &str) -> Result<SendOutput> {
     let pane = find_pane(thread_id)?;
     let mut rpc = Connection::open(codex.as_os_str())?;
