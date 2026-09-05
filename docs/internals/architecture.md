@@ -58,7 +58,7 @@ tracker participates in live state.
 WT transports bounded command requests to a running guest without interpreting them.
 Controllers own agent runtime installation, supervision, provider adaptation, and
 durable results. They can use `exec_world` to install and start a supervised service
-inside a world. See ADR 0086.
+inside a world. See [ADR 0086](../adr/0086-controller-owned-agent-execution.md).
 
 The public contract is [api/api.ts](../../api/api.ts). WT generates its Rust wire
 types from this TypeScript definition. Consumers clone a pinned WT revision and

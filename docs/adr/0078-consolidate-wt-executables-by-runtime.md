@@ -36,10 +36,8 @@ Long-running and internal entrypoints are explicit subcommands: `wts serve`,
 `wtg relay` and `wtg tools`. Command parsing dispatches
 into typed Rust library code instead of spawning another WT executable.
 
-Install extra guest names only where an external invocation contract requires
-one. They are symlinks to `wtg`, which dispatches by its invoked name:
-
-- `git-remote-wt-agent` for Git's remote-helper discovery; and
+Install `git-remote-wt-agent` as a symlink to `wtg` for Git's remote-helper
+discovery. `wtg` dispatches by its invoked name.
 
 Do not retain the former executable names as general compatibility shims. This
 is an installation contract change deployed as one coherent server and guest
@@ -55,7 +53,7 @@ test executables are outside this decision.
 - The executable name states where it runs: client `wt`, server `wts`, or
   guest `wtg`.
 - A normal server installation publishes `wts`; a guest image contains one
-  `wtg` file plus the two protocol-required symlinks.
+  `wtg` file plus the Git remote-helper symlink.
 - Updating `wts` or `wtg` requires validating all of its command modes.
   Internal module boundaries and targeted tests remain.
 - Scripts, service units, image contracts, and documentation migrate

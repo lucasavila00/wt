@@ -5,38 +5,31 @@
 
 ## Context
 
-Work performed in a world needs a small durable path back to its controller. Live Codex session
-events are useful while a session is running, but a terminal result also needs to survive a client
-disconnect and remain available after the session window has closed.
+Work in a world needs a durable path back to its controller that survives a
+client disconnect and does not depend on live terminal observations.
 
 ## Decision
 
-Every world has one durable, owner-scoped outbound mailbox. The guest command
-`send_message_to_parent` appends a UTF-8 message to that mailbox. The gateway derives the source
-world from the authenticated guest connection, so callers do not supply a world ID.
+Every world has one durable, owner-scoped outbound mailbox. The `wtg tools`
+command `send_message_to_parent` appends UTF-8 text. The gateway derives the
+source world from the accepted vsock peer's active WT libvirt domain; the
+caller supplies no world, window, or process identity.
 
-Mailbox rows contain a monotonic message ID, world ID, creation time, and message. Reads are
-ascending and cursor-based, accept a bounded count, and return the high-water ID observed at the
-start of the read. A consumer can therefore finish a finite scan while newer messages arrive and
-use the message ID as its import deduplication key.
+Writes commit before acknowledgement. Messages have a monotonic ID, world ID,
+creation time, and text. Reads are ascending and cursor-based, returning the
+high-water ID observed at the start of the read. Consumers use message IDs for
+deduplication and a captured high-water ID to bound a scan while mail arrives.
+A message is limited to 64 MiB of UTF-8 text; a read returns at most 1,000 entries.
 
-ADR 0086 uses the same mailbox for terminal Codex-session delivery. WT appends one terminal entry
-when a turn completes or fails. Its versioned message payload carries the Codex thread ID, turn ID,
-pane ID, terminal status, and final assistant or error text so the controller can associate the
-result with the session it started. The payload is a delivery record; live window, App Server, and
-turn state remain runtime state.
-
-Mailbox writes commit before they are acknowledged. Explicit guest messages and terminal session
-messages share the same ordering and read path. A message is limited to 64 MiB of UTF-8 text, and a
-read returns at most 1,000 entries.
-
-Mailbox rows retain a foreign key to their world and are deleted with it. A controller imports
-messages through the deletion high-water mark before deleting a world when it needs to retain
-them.
+Agent execution and terminal result delivery belong to controllers
+([ADR 0086](0086-controller-owned-agent-execution.md)).
+WT does not automatically append Codex completion results. The wire contract
+and gateway retain support for Codex result envelopes and their identity
+fields, but that support does not provide an agent supervisor or completion
+service.
 
 ## Consequences
 
-- Guest tools have one small, durable way to report to the parent controller.
-- Controllers consume mail incrementally and idempotently.
-- Codex terminal results remain available independently of the live session connection.
-- World deletion is also the mailbox retention boundary.
+Controllers can consume guest messages incrementally and idempotently.
+Mailbox rows are deleted with their world; controllers must import messages
+they need to retain before deleting it.
