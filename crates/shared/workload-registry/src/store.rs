@@ -1,4 +1,3 @@
-mod mail;
 mod reports;
 
 use crate::schema::worlds;

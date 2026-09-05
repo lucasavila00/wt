@@ -1,7 +1,6 @@
 mod activity;
 mod api;
 mod capacity;
-mod mail;
 mod reports;
 pub mod schema;
 mod store;
@@ -14,7 +13,6 @@ pub use api::ApiMutationStart;
 pub use capacity::{
     ensure_resources_reserved, release_resources, reserve_resources, reserved_resources,
 };
-pub use mail::{MailKind, WorldMail, WorldMailPage, MAX_MAIL_MESSAGE_BYTES};
 pub use reports::{AgentToolReport, AgentToolReportKind};
 pub use store::{NewWorld, Store, StoreError, StoredWorld};
 
@@ -267,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_schema_supports_mail_and_preserves_feedback_on_reopen() {
+    fn fresh_schema_preserves_feedback_on_reopen() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("registry.db");
         let mut connection = SqliteConnection::establish(path.to_str().unwrap()).unwrap();
@@ -306,13 +304,6 @@ mod tests {
         let reports = registry.list_agent_tool_reports("owner").unwrap();
         assert_eq!(reports.len(), 1);
         assert_eq!(reports[0].description, "keep me");
-        assert_eq!(
-            registry
-                .insert_world_mail(world_id, "hello")
-                .unwrap()
-                .message,
-            "hello"
-        );
     }
 
     #[test]

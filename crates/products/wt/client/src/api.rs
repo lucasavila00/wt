@@ -22,8 +22,7 @@ impl Request {
             | Self::ExecWorld { api_version, .. }
             | Self::ListWorlds { api_version, .. }
             | Self::CreateWorld { api_version, .. }
-            | Self::DeleteWorld { api_version, .. }
-            | Self::ReadWorldMail { api_version, .. } => *api_version,
+            | Self::DeleteWorld { api_version, .. } => *api_version,
         }
     }
 
@@ -33,8 +32,7 @@ impl Request {
             | Self::ExecWorld { request_id, .. }
             | Self::ListWorlds { request_id, .. }
             | Self::CreateWorld { request_id, .. }
-            | Self::DeleteWorld { request_id, .. }
-            | Self::ReadWorldMail { request_id, .. } => request_id,
+            | Self::DeleteWorld { request_id, .. } => request_id,
         }
     }
 
@@ -51,9 +49,6 @@ impl Request {
                 expected_server_id, ..
             }
             | Self::DeleteWorld {
-                expected_server_id, ..
-            }
-            | Self::ReadWorldMail {
                 expected_server_id, ..
             } => expected_server_id.as_deref(),
         }
@@ -285,22 +280,6 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 .map_err(|_| "invalid world ID".to_owned())?;
             Ok((context, Operation::DeleteWorld { world_id }))
         }
-        Request::ReadWorldMail {
-            context,
-            world_id,
-            after_message_id,
-            limit,
-            ..
-        } => Ok((
-            context,
-            Operation::ListWorldMail {
-                world_id: world_id
-                    .parse()
-                    .map_err(|_| "invalid world ID".to_owned())?,
-                after_id: after_message_id,
-                limit,
-            },
-        )),
     }
 }
 
@@ -313,7 +292,7 @@ fn call(
 ) -> Reply {
     let api_request = if matches!(
         &operation,
-        Operation::ListWorlds | Operation::ListWorldMail { .. } | Operation::ExecWorld { .. }
+        Operation::ListWorlds | Operation::ExecWorld { .. }
     ) {
         ApiRequest {
             protocol_version: wt_control_protocol::PROTOCOL_VERSION,
@@ -376,33 +355,6 @@ fn call(
                 Response::WorldDeleted { world_id } => ReplyOutcome::Ok {
                     result: ApiResult::DeleteWorld {
                         world_id: world_id.to_string(),
-                    },
-                },
-                Response::WorldMail {
-                    messages,
-                    high_water_id,
-                } => ReplyOutcome::Ok {
-                    result: ApiResult::ReadWorldMail {
-                        messages: messages
-                            .into_iter()
-                            .map(|mail| ApiWorldMail {
-                                message_id: mail.id,
-                                world_id: mail.world_id.to_string(),
-                                thread_id: mail.thread_id,
-                                turn_id: mail.turn_id,
-                                pane_id: mail.pane_id,
-                                created_at_unix_ms: mail.created_at_unix_ms,
-                                kind: match mail.kind {
-                                    wt_control_protocol::MailKind::Message => ApiMailKind::Message,
-                                    wt_control_protocol::MailKind::Completed => {
-                                        ApiMailKind::Completed
-                                    }
-                                    wt_control_protocol::MailKind::Failed => ApiMailKind::Failed,
-                                },
-                                text: mail.message,
-                            })
-                            .collect(),
-                        high_water_message_id: high_water_id,
                     },
                 },
                 _ => api_error(

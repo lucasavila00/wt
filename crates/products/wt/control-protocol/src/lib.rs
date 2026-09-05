@@ -4,7 +4,6 @@ mod activity;
 mod capacity;
 mod create;
 mod exec;
-mod mail;
 mod pane;
 #[cfg(test)]
 mod rename_tests;
@@ -17,7 +16,6 @@ pub use activity::{
 pub use capacity::{Capacity, CapacityResource};
 pub use create::{validate_create_world_resources, CreateWorld};
 pub use exec::{ExecCommand, ExecOutput};
-pub use mail::{MailKind, WorldMail, MAX_MAIL_TEXT_BYTES, MAX_WORLD_MAIL_PAGE_SIZE};
 pub use pane::{
     PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
     MAX_PANE_FRAME_CELLS, MAX_PANE_FRAME_COLUMNS, MAX_PANE_FRAME_ROWS, MAX_PANE_WINDOW_NAME_BYTES,
@@ -31,7 +29,7 @@ use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
 pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 21;
+pub const PROTOCOL_VERSION: u32 = 22;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -138,7 +136,6 @@ pub enum Operation {
     DeleteWorld { world_id: WorldId },
     ListAgentToolReports,
     ClearAgentToolReports,
-    ListWorldMail { world_id: WorldId, after_id: u64, limit: u32 },
     ListPaneObservations,
     ListGitActivity { query: GitActivityQuery },
     ListWtToolsActivity { query: WtToolsActivityQuery },
@@ -237,10 +234,6 @@ pub enum Response {
     },
     AgentToolReportsCleared {
         count: u64,
-    },
-    WorldMail {
-        messages: Vec<WorldMail>,
-        high_water_id: u64,
     },
     PaneObservations {
         panes: Vec<PaneObservation>,
@@ -538,7 +531,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 21,
+          "protocol_version": 22,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -574,7 +567,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 21,
+          "protocol_version": 22,
           "vcpus": 2
         }
         "###);
@@ -630,7 +623,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 21,
+          "protocol_version": 22,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -650,11 +643,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 21,
+            "protocol_version": 22,
             "operation": "server_info"
           },
           {
-            "protocol_version": 21,
+            "protocol_version": 22,
             "outcome": "ok",
             "response": {
               "response": "server_info",

@@ -53,17 +53,6 @@ pub(super) enum Request {
         expected_server_id: Option<String>,
         request_id: String,
     },
-    #[serde(rename = "read_world_mail")]
-    ReadWorldMail {
-        after_message_id: u64,
-        api_version: u32,
-        context: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        expected_server_id: Option<String>,
-        limit: u32,
-        request_id: String,
-        world_id: String,
-    },
 }
 
 #[derive(Debug, Serialize)]
@@ -112,10 +101,6 @@ pub(super) enum ApiResult {
     ListWorlds {
         worlds: Vec<ApiWorld>,
     },
-    ReadWorldMail {
-        high_water_message_id: u64,
-        messages: Vec<ApiWorldMail>,
-    },
 }
 
 #[derive(Debug, Serialize)]
@@ -126,14 +111,6 @@ pub(super) enum ApiWorldStatus {
     Provisioning,
     Running,
     Stopped,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum ApiMailKind {
-    Completed,
-    Failed,
-    Message,
 }
 
 #[derive(Debug, Serialize)]
@@ -165,21 +142,6 @@ pub(super) struct ApiWorld {
     pub(super) ssh: Option<ApiSshAccess>,
     pub(super) status: ApiWorldStatus,
     pub(super) vcpus: u32,
-    pub(super) world_id: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(super) struct ApiWorldMail {
-    pub(super) created_at_unix_ms: i64,
-    pub(super) kind: ApiMailKind,
-    pub(super) message_id: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) pane_id: Option<String>,
-    pub(super) text: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) thread_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) turn_id: Option<String>,
     pub(super) world_id: String,
 }
 

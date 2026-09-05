@@ -233,27 +233,6 @@ fn retryable_api_failure_does_not_consume_the_request_id() {
 }
 
 #[test]
-fn world_mail_pages_have_a_small_fixed_limit() {
-    let temp = tempfile::tempdir().unwrap();
-    let service = test_service(Store::open(&temp.path().join("instances.db")).unwrap());
-
-    for limit in [0, wt_control_protocol::MAX_WORLD_MAIL_PAGE_SIZE + 1] {
-        let error = service
-            .list_world_mail(
-                "owner",
-                Operation::ListWorldMail {
-                    world_id: WorldId::new(),
-                    after_id: 0,
-                    limit,
-                },
-            )
-            .unwrap_err();
-        assert_eq!(error.code, ErrorCode::InvalidRequest);
-        assert_eq!(error.message, "mail limit must be between 1 and 1000");
-    }
-}
-
-#[test]
 fn setup_fingerprint_is_stable() {
     let request = CreateWorld {
         name: WorldName::parse("host").unwrap(),
