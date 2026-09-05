@@ -7,6 +7,7 @@ fn snapshots_the_world_creation_review_screen() {
     let mut terminal = Terminal::new(backend).unwrap();
     let form = Form {
         contexts: vec!["local".into(), "lab".into()],
+        capacities: std::collections::BTreeMap::new(),
         context: 1,
         name: "repo-feature".into(),
         name_is_suggestion: false,

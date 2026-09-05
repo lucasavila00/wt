@@ -1,7 +1,7 @@
 use crate::config::{ClientConfig, Context};
 use crate::transport::{self, ContextError};
 use anyhow::{bail, Result};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use wt_control_protocol::{ApiRequest, Operation, ResourceCapacity, Response, World, WorldName};
@@ -18,6 +18,7 @@ pub struct ContextWorld {
 pub struct WorldInventory {
     pub worlds: Vec<ContextWorld>,
     pub capacity: ResourceCapacity,
+    pub capacity_by_context: BTreeMap<String, ResourceCapacity>,
     pub failures: Vec<ContextError>,
 }
 
@@ -142,6 +143,7 @@ fn list_all_inner(
 ) -> WorldInventory {
     let mut all = Vec::new();
     let mut capacity = ResourceCapacity::default();
+    let mut capacity_by_context = BTreeMap::new();
     let mut failures = Vec::new();
     for context in &config.contexts {
         if timeout.is_some_and(|(_, cancelled)| cancelled.load(Ordering::Relaxed)) {
@@ -171,6 +173,7 @@ fn list_all_inner(
             continue;
         };
         capacity = capacity.saturating_add(context_capacity);
+        capacity_by_context.insert(context.name.clone(), context_capacity);
         all.extend(worlds.into_iter().map(|world| {
             let agent_tool_report_count = agent_tool_report_counts
                 .get(&world.world_id)
@@ -189,6 +192,7 @@ fn list_all_inner(
     WorldInventory {
         worlds: all,
         capacity,
+        capacity_by_context,
         failures,
     }
 }

@@ -264,12 +264,13 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
     if !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal() {
         bail!("`wt new` requires an interactive terminal");
     }
-    let used_names = crate::inventory::list_all(config)
+    let inventory = crate::inventory::list_all(config);
+    let used_names = inventory
         .worlds
         .into_iter()
         .map(|item| item.world.name.to_string())
         .collect();
-    let mut flow = prepare(config, &used_names)?;
+    let mut flow = prepare(config, &used_names, inventory.capacity_by_context)?;
     let _signals = install_cancel_handlers()?;
     let mut terminal = ratatui::init();
     if let Err(error) = execute!(
@@ -291,17 +292,22 @@ pub(crate) fn run(config: &ClientConfig) -> Result<Created> {
     result.and_then(|created| input_result.map(|()| created))
 }
 
-pub(crate) fn prepare(config: &ClientConfig, used_names: &BTreeSet<String>) -> Result<Flow> {
+pub(crate) fn prepare(
+    config: &ClientConfig,
+    used_names: &BTreeSet<String>,
+    capacities: std::collections::BTreeMap<String, wt_control_protocol::ResourceCapacity>,
+) -> Result<Flow> {
     let author = read_git_author()?;
-    prepare_with_author(config, author, used_names)
+    prepare_with_author(config, author, used_names, capacities)
 }
 
 pub(crate) fn prepare_with_author(
     config: &ClientConfig,
     author: crate::git_author::GitAuthor,
     used_names: &BTreeSet<String>,
+    capacities: std::collections::BTreeMap<String, wt_control_protocol::ResourceCapacity>,
 ) -> Result<Flow> {
-    Form::new(config, author, used_names).map(Flow::new)
+    Form::new(config, author, used_names, capacities).map(Flow::new)
 }
 
 fn run_loop(

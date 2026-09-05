@@ -5,6 +5,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use wt_client::config::ClientConfig;
+use wt_control_protocol::ResourceCapacity;
 use wt_control_protocol::WorldName;
 
 use crate::git_author::GitAuthor;
@@ -66,6 +67,7 @@ enum Field {
 #[derive(Clone, Debug)]
 pub(crate) struct Form {
     contexts: Vec<String>,
+    capacities: std::collections::BTreeMap<String, ResourceCapacity>,
     context: usize,
     name: String,
     name_is_suggestion: bool,
@@ -83,6 +85,7 @@ impl Form {
         config: &ClientConfig,
         author: GitAuthor,
         used_names: &std::collections::BTreeSet<String>,
+        capacities: std::collections::BTreeMap<String, ResourceCapacity>,
     ) -> anyhow::Result<Self> {
         if config.contexts.is_empty() {
             anyhow::bail!("no contexts are configured");
@@ -93,6 +96,7 @@ impl Form {
                 .iter()
                 .map(|context| context.name.clone())
                 .collect(),
+            capacities,
             context: 0,
             name: suggested_name(used_names),
             name_is_suggestion: true,
@@ -131,6 +135,12 @@ impl Form {
             KeyCode::Down => self.move_focus(1),
             KeyCode::Left if self.field() == Some(Field::Context) => self.move_context(-1),
             KeyCode::Right if self.field() == Some(Field::Context) => self.move_context(1),
+            KeyCode::Left if self.field() == Some(Field::Vcpus) => self.step_vcpus(false),
+            KeyCode::Right if self.field() == Some(Field::Vcpus) => self.step_vcpus(true),
+            KeyCode::Left if self.field() == Some(Field::Memory) => self.step_memory(false),
+            KeyCode::Right if self.field() == Some(Field::Memory) => self.step_memory(true),
+            KeyCode::Left if self.field() == Some(Field::Disk) => self.step_disk(false),
+            KeyCode::Right if self.field() == Some(Field::Disk) => self.step_disk(true),
             KeyCode::Enter => return self.advance(),
             KeyCode::Backspace => {
                 if self.field() == Some(Field::Name) {
@@ -423,6 +433,39 @@ impl Form {
         };
     }
 
+    fn step_vcpus(&mut self, increase: bool) {
+        let current = number(&self.vcpus, DEFAULT_VCPUS);
+        let value = if increase {
+            current.saturating_add(1)
+        } else {
+            current.saturating_sub(1).max(1)
+        };
+        self.vcpus = value.to_string();
+        self.error = None;
+    }
+
+    fn step_memory(&mut self, increase: bool) {
+        let current_gib = number(&self.memory, DEFAULT_MEMORY_MIB).div_ceil(1024);
+        let limit = self
+            .capacity()
+            .map(|capacity| capacity.total.memory_mib / 1024);
+        self.memory = step_power_of_two(current_gib, increase, limit)
+            .saturating_mul(1024)
+            .to_string();
+        self.error = None;
+    }
+
+    fn step_disk(&mut self, increase: bool) {
+        let current = number(&self.disk, DEFAULT_DISK_GIB);
+        let limit = self.capacity().map(|capacity| capacity.total.disk_gib);
+        self.disk = step_power_of_two(current, increase, limit).to_string();
+        self.error = None;
+    }
+
+    fn capacity(&self) -> Option<ResourceCapacity> {
+        self.capacities.get(&self.contexts[self.context]).copied()
+    }
+
     fn fail(&mut self, error: String) -> Action {
         self.error = Some(error);
         Action::None
@@ -516,6 +559,25 @@ where
     value.parse().unwrap_or(default)
 }
 
+fn step_power_of_two(value: u64, increase: bool, limit: Option<u64>) -> u64 {
+    let value = value.max(1);
+    let stepped = if increase {
+        if value.is_power_of_two() {
+            value.checked_mul(2).unwrap_or(value)
+        } else {
+            value.checked_next_power_of_two().unwrap_or(value)
+        }
+    } else if value == 1 {
+        1
+    } else {
+        1 << (u64::BITS - 1 - (value - 1).leading_zeros())
+    };
+    limit.filter(|limit| *limit > 0).map_or(stepped, |limit| {
+        let largest_step = 1 << (u64::BITS - 1 - limit.leading_zeros());
+        stepped.min(largest_step)
+    })
+}
+
 fn parse_number<T>(value: &str, default: T) -> Result<T, String>
 where
     T: std::str::FromStr + Copy + PartialEq + Default,
@@ -534,156 +596,8 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
-    use wt_client::config::{Context, ContextKind};
-
-    fn form() -> Form {
-        Form::new(
-            &ClientConfig {
-                contexts: vec![
-                    Context {
-                        name: "local".into(),
-                        kind: ContextKind::BareMetalLocal,
-                    },
-                    Context {
-                        name: "lab".into(),
-                        kind: ContextKind::BareMetalLocal,
-                    },
-                ],
-            },
-            GitAuthor {
-                name: "Test User".into(),
-                email: "test@example.com".into(),
-            },
-            &std::collections::BTreeSet::new(),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn host_form_validates_and_builds_the_request_input() {
-        let mut form = form();
-        form.name = "demo".into();
-        form.context = 1;
-
-        let input = form.input().unwrap();
-
-        assert_eq!(input.context, "lab");
-        assert_eq!(input.name.as_str(), "demo");
-        assert_eq!(input.vcpus, DEFAULT_VCPUS);
-        assert_eq!(input.git_user_name, "Test User");
-    }
-
-    #[test]
-    fn suggests_the_first_unused_world_name() {
-        let used_names = ["amber-badger".to_owned(), "amber-bison".to_owned()]
-            .into_iter()
-            .collect();
-
-        assert_eq!(suggested_name_from(&used_names, 0), "amber-corgi");
-    }
-
-    #[test]
-    fn invalid_values_stay_in_the_form() {
-        let mut form = form();
-        form.focus = 1;
-        form.name.clear();
-        form.name_is_suggestion = false;
-
-        assert!(matches!(
-            form.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Action::None
-        ));
-        assert!(form.error.as_deref().unwrap().contains("world name"));
-        assert_eq!(form.focus, 1);
-    }
-
-    #[test]
-    fn starts_on_ok_and_accepts_the_valid_defaults() {
-        let mut form = form();
-
-        assert_eq!(form.focus, OK_FOCUS);
-        assert!(matches!(
-            form.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-            Action::None
-        ));
-        assert_eq!(form.stage, Stage::Review);
-    }
-
-    #[test]
-    fn ok_button_is_directly_clickable() {
-        let mut form = form();
-        let area = Rect::new(0, 0, 100, 30);
-        let button = form_layout(area, HOST_FIELDS.len()).fields;
-
-        assert!(matches!(
-            form.handle_mouse(
-                MouseEvent {
-                    kind: MouseEventKind::Down(MouseButton::Left),
-                    column: button.x + 3,
-                    row: button.y + OK_FOCUS as u16,
-                    modifiers: KeyModifiers::NONE,
-                },
-                area,
-            ),
-            Action::None
-        ));
-        assert_eq!(form.stage, Stage::Review);
-    }
-
-    #[test]
-    fn clicking_a_field_moves_keyboard_focus_to_it() {
-        let mut form = form();
-        let area = Rect::new(0, 0, 100, 30);
-        let fields = form_layout(area, HOST_FIELDS.len()).fields;
-
-        let _ = form.handle_mouse(
-            MouseEvent {
-                kind: MouseEventKind::Down(MouseButton::Left),
-                column: fields.x,
-                row: fields.y + 1,
-                modifiers: KeyModifiers::NONE,
-            },
-            area,
-        );
-
-        assert_eq!(form.focus, 1);
-    }
-
-    #[test]
-    fn terminal_sequence_reaches_confirmation() {
-        let mut form = form();
-        let mut action = Action::None;
-        for character in "\nrepo-feature\n\n\n\n\n".chars() {
-            let code = if character == '\n' {
-                KeyCode::Enter
-            } else {
-                KeyCode::Char(character)
-            };
-            action = form.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
-        }
-        assert!(matches!(action, Action::Submit(_)));
-    }
-
-    #[test]
-    fn overlay_clears_the_modal_background() {
-        let backend = TestBackend::new(84, 22);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let form = form();
-        terminal
-            .draw(|frame| {
-                frame.render_widget(Paragraph::new("x".repeat(84 * 22)), frame.area());
-                form.render_overlay(frame, frame.area());
-            })
-            .unwrap();
-        let modal = form_layout(Rect::new(0, 0, 84, 22), HOST_FIELDS.len()).modal;
-        let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(0, 0)].symbol(), "x");
-        assert_eq!(buffer[(modal.x + 1, modal.y + 1)].symbol(), " ");
-    }
-}
+#[path = "form_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "form_snapshots.rs"]
