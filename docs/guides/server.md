@@ -13,7 +13,7 @@ The installer prepares libvirt, capacity state, the agent tool gateway, and a
 verified guest golden image. Every image contains Git, OpenSSH, QEMU
 guest support, Byobu, tmux, Diffo, WT's guest helpers, current Rust/Cargo,
 Go, Python/uv, Node.js/nvm, build tools, CLI utilities including ShellCheck,
-and Docker with Compose.
+Docker with Compose, and the interactive Codex CLI.
 
 Golden-image rebuilds reuse a verified local development-tools cache and refresh
 WT's guest binaries instead of reinstalling language toolchains. Changing the
@@ -33,9 +33,16 @@ Change that source and rebuild the image instead of editing a world. Existing
 world overlays retain their current backing image, so they do not receive a
 changed default.
 
-Agent binaries and user configuration are not owned by the golden image.
+Every new world has `codex` on PATH, with the version pinned in
+`assets/world/guest/codex-version`. The image supplies the initial user configuration
+for unrestricted execution inside the guest and the WT world-context hook. Users
+can edit that configuration in their world. Rebuild the image to change the
+preinstalled CLI; existing worlds retain their installed version.
+
 Install and update the standalone [agapi runtime](../../crates/products/agapi/README.md)
-inside existing worlds. Supervise agapi serve independently of WT.
+inside existing worlds. Its installer keeps its matching Codex binary under
+`~/.local/share/agapi/codex`, separately from the interactive CLI. Supervise
+`agapi serve` independently of WT, passing that private binary with `--codex`.
 
 Codex authentication is shared read-only. Each world receives a read-write
 mount of only its own server-backed sessions directory; user configuration,

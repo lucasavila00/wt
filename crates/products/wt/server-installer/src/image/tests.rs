@@ -178,6 +178,23 @@ fn guest_image_sets_codex_model_defaults() {
 }
 
 #[test]
+fn guest_image_supplies_interactive_codex_configuration() {
+    insta::assert_snapshot!(
+        include_str!("../../../../../../assets/world/guest/codex-config.toml"),
+        @r###"
+    approval_policy = "never"
+    sandbox_mode = "danger-full-access"
+
+    [[hooks.SessionStart]]
+
+    [[hooks.SessionStart.hooks]]
+    type = "command"
+    command = '''wtg tools world-prompt'''
+    "###
+    );
+}
+
+#[test]
 fn guest_image_grants_the_user_nested_kvm_access() {
     let prepare = std::str::from_utf8(GUEST_PREPARE).unwrap();
 

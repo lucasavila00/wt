@@ -14,9 +14,14 @@ tar -xzf "$staging/agapi-x86_64-linux.tar.gz" -C "$staging" agapi codex-version
 CODEX_RELEASE=$(<"$staging/codex-version")
 export CODEX_RELEASE
 curl -fsSL https://chatgpt.com/codex/install.sh -o "$staging/install-codex.sh"
-CODEX_NON_INTERACTIVE=1 sh "$staging/install-codex.sh"
-test "$("$HOME/.codex/packages/standalone/current/bin/codex" --version)" = "codex-cli $CODEX_RELEASE"
+agapi_codex_root="$HOME/.local/share/agapi/codex"
+# Isolate installer profile edits; runtime auth and sessions still use ~/.codex.
+HOME="$staging" CODEX_HOME="$agapi_codex_root" CODEX_INSTALL_DIR="$agapi_codex_root/bin" \
+    PATH="$agapi_codex_root/bin:$PATH" CODEX_NON_INTERACTIVE=1 \
+    sh "$staging/install-codex.sh"
+test "$("$agapi_codex_root/bin/codex" --version)" = "codex-cli $CODEX_RELEASE"
 install -d "$HOME/.local/bin"
 install -m 0755 "$staging/agapi" "$HOME/.local/bin/.agapi-new"
 mv -f "$HOME/.local/bin/.agapi-new" "$HOME/.local/bin/agapi"
 echo "Installed agapi $version and Codex $CODEX_RELEASE. Restart agapi serve to use them."
+echo "Use agapi serve --codex $agapi_codex_root/bin/codex with your state and workspace paths."

@@ -58,9 +58,11 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
             bail!("finalized image guest binary differs: {guest_path}");
         }
     }
-    {
-        let path = "/usr/local/bin/git-remote-wt-agent";
-        let expected = format!(" {path} -> /usr/local/bin/wtg");
+    for (path, target) in [
+        ("/usr/local/bin/git-remote-wt-agent", "/usr/local/bin/wtg"),
+        ("/usr/local/bin/codex", "/home/wt/.local/bin/codex"),
+    ] {
+        let expected = format!(" {path} -> {target}");
         if !binary_listing
             .lines()
             .any(|line| line.starts_with("l 0777 ") && line.ends_with(&expected))
@@ -168,7 +170,7 @@ mod tests {
     fn binary_metadata_ignores_symlinks_that_target_the_binary() {
         let guest_path = "/usr/local/bin/wtg";
         let listing = concat!(
-            "l 0777 39 0 0 /usr/local/bin/codex -> /usr/local/bin/wtg\n",
+            "l 0777 18 0 0 /usr/local/bin/git-remote-wt-agent -> /usr/local/bin/wtg\n",
             "- 0755 123 0 0 /usr/local/bin/wtg\n",
         );
         let fields = metadata_fields(listing, guest_path);
