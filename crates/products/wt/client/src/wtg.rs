@@ -9,7 +9,6 @@ USAGE:
     wtg <COMMAND>
 
 COMMANDS:
-    codex    Focus an observed Codex pane
     tools    Run a provider command; use `wtg tools --help` for details
     help     Print this help message
 ";
@@ -153,7 +152,6 @@ mod tests {
             wtg <COMMAND>
 
         COMMANDS:
-            codex    Focus an observed Codex pane
             tools    Run a provider command; use `wtg tools --help` for details
             help     Print this help message
         "#);
