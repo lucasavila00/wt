@@ -7,6 +7,18 @@ defmodule WtApi do
 
   @type error :: TransportError.t() | ProtocolError.t() | ServerError.t()
 
+  @doc "List configured context names without contacting a server."
+  def list_contexts(request), do: list_contexts(Client.new(), request)
+
+  def list_contexts(client, %Request.ListContexts{} = request),
+    do: call(client, request, Result.ListContexts, fn _result -> :ok end)
+
+  @doc "List existing worlds in one context without modifying them."
+  def list_worlds(request), do: list_worlds(Client.new(), request)
+
+  def list_worlds(client, %Request.ListWorlds{} = request),
+    do: call(client, request, Result.ListWorlds, fn _result -> :ok end)
+
   @spec create_world(Request.CreateWorld.t()) ::
           {:ok, Success.t(Result.CreateWorld.t())} | {:error, error()}
   def create_world(request), do: create_world(Client.new(), request)
@@ -204,8 +216,14 @@ defmodule WtApi do
   defp validate_metadata(response, request) do
     with :ok <- equal_identity(response["api_version"], 1, "API version"),
          :ok <- equal_identity(response["request_id"], request.request_id, "request ID"),
-         :ok <- valid_uuid(response["server_id"], response["outcome"] == "ok", "server ID"),
-         :ok <- expected_server(response["server_id"], request.expected_server_id) do
+         :ok <-
+           valid_uuid(
+             response["server_id"],
+             response["outcome"] == "ok" and
+               request.operation != "list_contexts",
+             "server ID"
+           ),
+         :ok <- expected_server(response["server_id"], Map.get(request, :expected_server_id)) do
       :ok
     end
   end

@@ -6,6 +6,20 @@ export type UInt16 = NumberFormat<"UInt16">;
 export type UInt32 = NumberFormat<"UInt32">;
 export type UInt64 = NumberFormat<"UInt64">;
 
+export type ListContextsRequest = {
+  api_version: 1;
+  request_id: Uuid;
+  operation: "list_contexts";
+};
+
+export type ListWorldsRequest = {
+  api_version: 1;
+  request_id: Uuid;
+  expected_server_id?: Uuid;
+  context: string;
+  operation: "list_worlds";
+};
+
 export type CreateWorldRequest = {
   api_version: 1;
   request_id: Uuid;
@@ -105,6 +119,8 @@ export type InterruptCodexRequest = {
 };
 
 export type Request =
+  | ListContextsRequest
+  | ListWorldsRequest
   | CreateWorldRequest
   | DeleteWorldRequest
   | StartCodexRequest
@@ -146,6 +162,8 @@ export type WorldMail = {
 };
 
 export type CreateWorldResult = { world: World };
+export type ListContextsResult = { contexts: string[] };
+export type ListWorldsResult = { worlds: World[] };
 export type DeleteWorldResult = { world_id: Uuid };
 
 export type StartCodexResult = {
@@ -177,6 +195,8 @@ export type ReadWorldMailResult = {
 };
 
 export type Result =
+  | ListContextsResult
+  | ListWorldsResult
   | CreateWorldResult
   | DeleteWorldResult
   | StartCodexResult
@@ -202,7 +222,7 @@ export type Error = {
 export type SuccessResponse = {
   api_version: 1;
   request_id: Uuid;
-  server_id: Uuid;
+  server_id?: Uuid;
   expires_at_unix_ms?: Int64;
   outcome: "ok";
   result: Result;
