@@ -87,9 +87,11 @@ control master, then shows that world's shared Byobu session.
 The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved
 versions. This is not a runtime world setting.
-It also installs the interactive Codex CLI and initial user configuration.
-The standalone agapi installer owns a separate Codex binary for its provider
-version requirement; both use the guest's existing auth and session mounts.
+It also installs the interactive Codex CLI and initial user configuration,
+plus a separately built static agapi executable and its matching private Codex
+binary. agapi is available on PATH but is not started by WT. Its standalone
+installer can update the pair inside existing worlds. Both Codex installations
+use the guest's existing auth and session mounts at runtime.
 
 Provisioning is intentionally restart-only. WT does not resume an interrupted
 sequence or repair partial guest state. Remove a failed world and create it

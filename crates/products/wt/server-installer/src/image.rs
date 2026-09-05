@@ -47,7 +47,8 @@ const GUEST_INPUTS: &[(&str, &str, &[u8])] = &[
     ("guest-shell", "/var/tmp/wt-guest-shell", GUEST_SHELL),
     ("guest-prepare", "/var/tmp/wt-guest-prepare", GUEST_PREPARE),
 ];
-const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[("wtg", "/var/tmp/wtg")];
+const GUEST_BINARY_INPUTS: &[(&str, &str)] =
+    &[("wtg", "/var/tmp/wtg"), ("agapi", "/var/tmp/agapi")];
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
@@ -244,7 +245,7 @@ fn build_image_inner<R: Runner>(context: &BuildContext<'_, R>, build_dir: &Path)
     fs::write(&codex_requirements, CODEX_REQUIREMENTS).context("stage Codex requirements")?;
     let guest_binary_inputs = GUEST_BINARY_INPUTS
         .iter()
-        .map(|(_, guest_path)| (binaries::guest_binary(), *guest_path))
+        .map(|(name, guest_path)| (binaries::guest_binary(name), *guest_path))
         .collect::<Vec<_>>();
     let extra_inputs = staged_paths
         .iter()

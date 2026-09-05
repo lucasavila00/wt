@@ -19,6 +19,9 @@ compose agapi over WT execution or run the same agapi executable locally.
 Local execution is not an isolation boundary. No container provider is implemented.
 
 Real Codex compatibility tests run against a localhost model endpoint.
-WT's former agent-specific operations, compiled wrapper, image-installed Codex,
-and completion services are removed. Existing authentication/history mounts remain
-world infrastructure; they do not control the agent runtime lifecycle.
+WT's former agent-specific operations, compiled wrapper, and completion services
+are removed. Images preinstall the interactive Codex CLI and the standalone
+agapi/Codex pair for convenience; this does not give WT ownership of agapi's
+runtime lifecycle. Existing authentication/history mounts remain world
+infrastructure. agapi is started on demand and can be updated independently
+inside an existing world.

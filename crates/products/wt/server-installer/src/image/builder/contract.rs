@@ -52,7 +52,7 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
         if !output.status.success() {
             bail!("finalized image does not contain {guest_path}");
         }
-        let expected = fs::read(binaries::guest_binary())
+        let expected = fs::read(binaries::guest_binary(name))
             .with_context(|| format!("read built guest binary {name}"))?;
         if output.stdout != expected {
             bail!("finalized image guest binary differs: {guest_path}");

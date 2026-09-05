@@ -28,6 +28,11 @@ test "$(runuser --user "$WT_USER" -- /usr/local/bin/codex --version)" = \
     "codex-cli $CODEX_RELEASE"
 test "$(stat -c '%u:%g %a' "$WT_HOME/.codex/config.toml")" = \
     "$WT_UID:$WT_GID 600"
+test "$(readlink "$WT_HOME/.local/bin/agapi")" = /usr/local/bin/agapi
+runuser --user "$WT_USER" -- "$WT_HOME/.local/bin/agapi" --version >/dev/null
+test "$(runuser --user "$WT_USER" -- \
+    "$WT_HOME/.local/share/agapi/codex/bin/codex" --version)" = \
+    "codex-cli $AGAPI_CODEX_RELEASE"
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \
     bash -o pipefail -c '
@@ -56,6 +61,7 @@ rm -f /etc/netplan/50-cloud-init.yaml /var/log/cloud-init.log \
     /var/tmp/wt-guest-agent-tools \
     /var/tmp/wt-guest-mount-codex \
     /var/tmp/wtg \
+    /var/tmp/agapi \
     /var/tmp/wt-codex-config.toml \
     /var/lib/wt-tmux
 truncate -s 0 /etc/machine-id
