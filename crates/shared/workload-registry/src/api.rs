@@ -27,6 +27,7 @@ struct NewApiMutation<'a> {
     request_hash: &'a str,
     response_json: Option<&'a str>,
     expires_at_unix_ms: i64,
+    preserve_on_restart: bool,
 }
 
 #[derive(Queryable)]
@@ -61,8 +62,15 @@ impl Store {
         owner: &str,
         request_id: Uuid,
         request_hash: &str,
+        preserve_on_restart: bool,
     ) -> Result<ApiMutationStart, StoreError> {
-        self.begin_api_mutation_at(owner, request_id, request_hash, now_unix_ms()?)
+        self.begin_api_mutation_at(
+            owner,
+            request_id,
+            request_hash,
+            now_unix_ms()?,
+            preserve_on_restart,
+        )
     }
 
     fn begin_api_mutation_at(
@@ -71,6 +79,7 @@ impl Store {
         request_id: Uuid,
         request_hash: &str,
         now_unix_ms: i64,
+        preserve_on_restart: bool,
     ) -> Result<ApiMutationStart, StoreError> {
         let expires_at_unix_ms = now_unix_ms
             .checked_add(RESULT_RETENTION_MILLIS)
@@ -110,6 +119,7 @@ impl Store {
                     request_hash,
                     response_json: None,
                     expires_at_unix_ms,
+                    preserve_on_restart,
                 })
                 .execute(connection)?;
             Ok(ApiMutationStart::Started { expires_at_unix_ms })
@@ -165,7 +175,9 @@ impl Store {
     pub fn clear_incomplete_api_mutations(&self) -> Result<(), StoreError> {
         self.registry.read(|connection| {
             diesel::delete(
-                api_mutation_results::table.filter(api_mutation_results::response_json.is_null()),
+                api_mutation_results::table
+                    .filter(api_mutation_results::response_json.is_null())
+                    .filter(api_mutation_results::preserve_on_restart.eq(false)),
             )
             .execute(connection)?;
             Ok(())
@@ -203,13 +215,13 @@ mod tests {
 
         assert!(matches!(
             store
-                .begin_api_mutation_at("owner", request_id, r#"{"operation":"create"}"#, 100)
+                .begin_api_mutation_at("owner", request_id, r#"{"operation":"create"}"#, 100, false)
                 .unwrap(),
             ApiMutationStart::Started { .. }
         ));
         assert_eq!(
             store
-                .begin_api_mutation_at("owner", request_id, r#"{"operation":"create"}"#, 100)
+                .begin_api_mutation_at("owner", request_id, r#"{"operation":"create"}"#, 100, false)
                 .unwrap(),
             ApiMutationStart::InProgress
         );
@@ -223,14 +235,14 @@ mod tests {
             .unwrap();
         assert!(matches!(
             store
-                .begin_api_mutation_at("owner", request_id, r#"{"operation":"create"}"#, 100)
+                .begin_api_mutation_at("owner", request_id, r#"{"operation":"create"}"#, 100, false)
                 .unwrap(),
             ApiMutationStart::Replay { response_json, .. }
                 if response_json == r#"{"outcome":"ok"}"#
         ));
         assert_eq!(
             store
-                .begin_api_mutation_at("owner", request_id, r#"{"operation":"delete"}"#, 100)
+                .begin_api_mutation_at("owner", request_id, r#"{"operation":"delete"}"#, 100, false)
                 .unwrap(),
             ApiMutationStart::Conflict
         );
@@ -245,21 +257,27 @@ mod tests {
         let request = r#"{"operation":"delete"}"#;
 
         store
-            .begin_api_mutation_at("owner", expired, request, 100)
+            .begin_api_mutation_at("owner", expired, request, 100, false)
             .unwrap();
         assert!(matches!(
             store
-                .begin_api_mutation_at("owner", expired, request, 100 + RESULT_RETENTION_MILLIS)
+                .begin_api_mutation_at(
+                    "owner",
+                    expired,
+                    request,
+                    100 + RESULT_RETENTION_MILLIS,
+                    false
+                )
                 .unwrap(),
             ApiMutationStart::Started { .. }
         ));
         store
-            .begin_api_mutation_at("owner", interrupted, request, 100)
+            .begin_api_mutation_at("owner", interrupted, request, 100, false)
             .unwrap();
         store.clear_incomplete_api_mutations().unwrap();
         assert!(matches!(
             store
-                .begin_api_mutation_at("owner", interrupted, request, 100)
+                .begin_api_mutation_at("owner", interrupted, request, 100, false)
                 .unwrap(),
             ApiMutationStart::Started { .. }
         ));

@@ -1,3 +1,7 @@
+DROP TABLE codex_result_deliveries;
+DROP TABLE world_mail;
+DROP TABLE api_mutation_results;
+DROP TABLE server_metadata;
 DROP TABLE world_wt_tools_activity;
 DROP TABLE world_git_activity;
 DROP TABLE repositories;

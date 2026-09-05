@@ -1,4 +1,4 @@
-use crate::schema::{world_mail, worlds};
+use crate::schema::{codex_result_deliveries, world_mail, worlds};
 use crate::{Registry, RegistryError};
 use diesel::dsl::max;
 use diesel::prelude::*;
@@ -39,7 +39,7 @@ pub struct WorldMailPage {
 struct CodexWindowResultEnvelope<'a> {
     thread_id: &'a str,
     turn_id: &'a str,
-    pane_id: &'a str,
+    pane_id: Option<&'a str>,
     kind: MailKind,
     #[serde(borrow)]
     message: std::borrow::Cow<'a, str>,
@@ -68,7 +68,7 @@ impl Registry {
         world_id: WorldId,
         thread_id: &str,
         turn_id: &str,
-        pane_id: &str,
+        pane_id: Option<&str>,
         kind: MailKind,
         message: &str,
     ) -> Result<WorldMail, RegistryError> {
@@ -78,7 +78,7 @@ impl Registry {
                 "Codex result must be completed or failed".into(),
             ));
         }
-        if thread_id.is_empty() || turn_id.is_empty() || pane_id.is_empty() {
+        if thread_id.is_empty() || turn_id.is_empty() || pane_id.is_some_and(str::is_empty) {
             return Err(RegistryError::InvalidData(
                 "Codex result identity must not be empty".into(),
             ));
@@ -92,7 +92,35 @@ impl Registry {
         })
         .map_err(|error| RegistryError::InvalidData(error.to_string()))?;
         let stored = format!("{CODEX_WINDOW_RESULT_PREFIX}{envelope}");
-        self.immediate_transaction(|connection| insert_mail_row(connection, world_id, &stored))
+        self.immediate_transaction(|connection| {
+            let existing = codex_result_deliveries::table
+                .find((world_id.to_string(), thread_id, turn_id))
+                .select(codex_result_deliveries::mail_id)
+                .first::<i64>(connection)
+                .optional()?;
+            if let Some(mail_id) = existing {
+                let row = world_mail::table
+                    .find(mail_id)
+                    .select((
+                        world_mail::id,
+                        world_mail::world_id,
+                        world_mail::created_at_unix_ms,
+                        world_mail::message,
+                    ))
+                    .first::<Row>(connection)?;
+                return parse(row);
+            }
+            let mail = insert_mail_row(connection, world_id, &stored)?;
+            diesel::insert_into(codex_result_deliveries::table)
+                .values((
+                    codex_result_deliveries::world_id.eq(world_id.to_string()),
+                    codex_result_deliveries::thread_id.eq(thread_id),
+                    codex_result_deliveries::turn_id.eq(turn_id),
+                    codex_result_deliveries::mail_id.eq(mail.id as i64),
+                ))
+                .execute(connection)?;
+            Ok(mail)
+        })
     }
 
     pub fn list_world_mail(
@@ -207,7 +235,7 @@ fn decode(
             Ok(envelope) if matches!(envelope.kind, MailKind::Completed | MailKind::Failed) => (
                 Some(envelope.thread_id.to_owned()),
                 Some(envelope.turn_id.to_owned()),
-                Some(envelope.pane_id.to_owned()),
+                envelope.pane_id.map(str::to_owned),
                 envelope.kind,
                 envelope.message.into_owned(),
             ),
@@ -242,7 +270,7 @@ mod tests {
                 world_id,
                 "thread-1",
                 "turn-1",
-                "%7",
+                Some("%7"),
                 MailKind::Completed,
                 "done",
             )

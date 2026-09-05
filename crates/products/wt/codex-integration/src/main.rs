@@ -1,7 +1,9 @@
 mod app_server;
+mod completion;
 mod focus;
 mod install;
 mod runtime;
+mod tracking;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -37,16 +39,19 @@ enum Command {
     /// Inspect a managed Codex thread and its visible Byobu window.
     #[command(hide = true)]
     RuntimeInspect { thread_id: String },
-    /// Steer an active turn or start the next turn.
+    /// Resume a persisted Codex thread and reopen its visible window if needed.
+    #[command(hide = true)]
+    RuntimeResume { thread_id: String },
+    /// Start the next turn; reject a busy thread without steering it.
     #[command(hide = true)]
     RuntimeSend { thread_id: String },
-    /// Forward one Codex turn completion to the WT guest relay.
     #[command(hide = true)]
-    WatchTurn {
-        thread_id: String,
-        turn_id: String,
-        pane_id: String,
-    },
+    RuntimeSteer { thread_id: String, turn_id: String },
+    #[command(hide = true)]
+    RuntimeInterrupt { thread_id: String, turn_id: String },
+    /// Reconcile tracked Codex threads and retry durable completion deliveries.
+    #[command(hide = true)]
+    WatchTurns,
 }
 
 #[allow(dead_code)]
@@ -71,20 +76,29 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
         } => println!("{}", focus::focus(&tmux_session, &pane_id)?),
         Command::RuntimeStart => {
             let message = read_stdin()?;
-            print_json(&runtime::start(&real_codex()?, &message)?)?;
+            print_json(&runtime::start(&message)?)?;
         }
         Command::RuntimeInspect { thread_id } => {
-            print_json(&runtime::inspect(&real_codex()?, &thread_id)?)?;
+            print_json(&runtime::inspect(&thread_id)?)?;
+        }
+        Command::RuntimeResume { thread_id } => {
+            print_json(&runtime::resume(&thread_id)?)?;
         }
         Command::RuntimeSend { thread_id } => {
             let message = read_stdin()?;
-            print_json(&runtime::send(&real_codex()?, &thread_id, &message)?)?;
+            print_json(&runtime::send(&thread_id, &message)?)?;
         }
-        Command::WatchTurn {
-            thread_id,
-            turn_id,
-            pane_id,
-        } => runtime::watch(&real_codex()?, &thread_id, &turn_id, &pane_id)?,
+        Command::WatchTurns => tracking::watch()?,
+        Command::RuntimeSteer { thread_id, turn_id } => {
+            print_json(&runtime::control_turn(
+                &thread_id,
+                &turn_id,
+                Some(&read_stdin()?),
+            )?)?;
+        }
+        Command::RuntimeInterrupt { thread_id, turn_id } => {
+            print_json(&runtime::control_turn(&thread_id, &turn_id, None)?)?;
+        }
     }
     Ok(())
 }

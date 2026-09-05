@@ -157,6 +157,51 @@
       ],
       "additionalProperties": false
     },
+    "InterruptCodexRequest": {
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
+        "context": {
+          "type": "string"
+        },
+        "expected_server_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "interrupt_codex"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "world_id": {
+          "$ref": "#/$defs/Uuid"
+        }
+      },
+      "required": [
+        "api_version",
+        "context",
+        "operation",
+        "request_id",
+        "thread_id",
+        "turn_id",
+        "world_id"
+      ],
+      "additionalProperties": false
+    },
     "ReadWorldMailRequest": {
       "type": "object",
       "properties": {
@@ -198,6 +243,47 @@
         "limit",
         "operation",
         "request_id",
+        "world_id"
+      ],
+      "additionalProperties": false
+    },
+    "ResumeCodexRequest": {
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
+        "context": {
+          "type": "string"
+        },
+        "expected_server_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "resume_codex"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "world_id": {
+          "$ref": "#/$defs/Uuid"
+        }
+      },
+      "required": [
+        "api_version",
+        "context",
+        "operation",
+        "request_id",
+        "thread_id",
         "world_id"
       ],
       "additionalProperties": false
@@ -288,6 +374,55 @@
       ],
       "additionalProperties": false
     },
+    "SteerCodexRequest": {
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
+        "context": {
+          "type": "string"
+        },
+        "expected_server_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "message": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "steer_codex"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "thread_id": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "world_id": {
+          "$ref": "#/$defs/Uuid"
+        }
+      },
+      "required": [
+        "api_version",
+        "context",
+        "message",
+        "operation",
+        "request_id",
+        "thread_id",
+        "turn_id",
+        "world_id"
+      ],
+      "additionalProperties": false
+    },
     "Request": {
       "type": "object",
       "discriminator": {
@@ -296,9 +431,12 @@
           "create_world": "#/$defs/CreateWorldRequest",
           "delete_world": "#/$defs/DeleteWorldRequest",
           "inspect_codex": "#/$defs/InspectCodexRequest",
+          "interrupt_codex": "#/$defs/InterruptCodexRequest",
           "read_world_mail": "#/$defs/ReadWorldMailRequest",
+          "resume_codex": "#/$defs/ResumeCodexRequest",
           "send_codex_message": "#/$defs/SendCodexMessageRequest",
-          "start_codex": "#/$defs/StartCodexRequest"
+          "start_codex": "#/$defs/StartCodexRequest",
+          "steer_codex": "#/$defs/SteerCodexRequest"
         }
       },
       "oneOf": [
@@ -312,13 +450,22 @@
           "$ref": "#/$defs/InspectCodexRequest"
         },
         {
+          "$ref": "#/$defs/InterruptCodexRequest"
+        },
+        {
           "$ref": "#/$defs/ReadWorldMailRequest"
+        },
+        {
+          "$ref": "#/$defs/ResumeCodexRequest"
         },
         {
           "$ref": "#/$defs/SendCodexMessageRequest"
         },
         {
           "$ref": "#/$defs/StartCodexRequest"
+        },
+        {
+          "$ref": "#/$defs/SteerCodexRequest"
         }
       ]
     },
@@ -555,11 +702,8 @@
       },
       "required": [
         "observed_at_unix_ms",
-        "pane_id",
-        "screen",
         "status",
-        "thread_id",
-        "window_name"
+        "thread_id"
       ],
       "additionalProperties": false
     },
@@ -630,6 +774,7 @@
         "delivery": {
           "type": "string",
           "enum": [
+            "interrupt_requested",
             "started",
             "steered"
           ]
@@ -665,10 +810,8 @@
         }
       },
       "required": [
-        "pane_id",
         "thread_id",
-        "turn_id",
-        "window_name"
+        "turn_id"
       ],
       "additionalProperties": false
     },

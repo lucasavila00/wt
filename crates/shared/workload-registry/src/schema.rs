@@ -7,6 +7,7 @@ diesel::table! {
         request_hash -> Text,
         response_json -> Nullable<Text>,
         expires_at_unix_ms -> BigInt,
+        preserve_on_restart -> Bool,
     }
 }
 
@@ -90,6 +91,15 @@ diesel::table! {
         change_request -> Nullable<Text>,
         request_json -> Text,
         response_json -> Text,
+    }
+}
+
+diesel::table! {
+    codex_result_deliveries (world_id, thread_id, turn_id) {
+        world_id -> Text,
+        thread_id -> Text,
+        turn_id -> Text,
+        mail_id -> BigInt,
     }
 }
 

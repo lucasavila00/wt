@@ -20,5 +20,9 @@ CPU, RAM, and disk admission is therefore atomic. Stopped worlds reserve no CPU
 or RAM and count only current disk allocation; starting one reacquires its full
 configured capacity.
 
-Migrations and generated schema are owned by
-`crates/shared/workload-registry` and embedded in the binaries.
+The bootstrap schema and generated Diesel schema are owned by
+`crates/shared/workload-registry` and embedded in the binaries. For now there is one
+bootstrap migration for a fresh registry, not an upgrade/backfill chain. Clear the
+development server state with `make clear` before installing this schema; existing
+databases are not supported across this reset. Normal process and guest restarts still
+retain their database and durable recovery state.

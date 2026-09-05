@@ -4,17 +4,17 @@ use serde::{Deserialize, Serialize};
 pub struct CodexStart {
     pub thread_id: String,
     pub turn_id: String,
-    pub pane_id: String,
-    pub window_name: String,
+    pub pane_id: Option<String>,
+    pub window_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CodexInspection {
     pub status: CodexRuntimeStatus,
     pub active_turn_id: Option<String>,
-    pub pane_id: String,
-    pub window_name: String,
-    pub screen: String,
+    pub pane_id: Option<String>,
+    pub window_name: Option<String>,
+    pub screen: Option<String>,
     pub observed_at_unix_ms: i64,
 }
 
@@ -37,4 +37,5 @@ pub struct CodexSend {
 pub enum CodexMessageDelivery {
     Steered,
     Started,
+    InterruptRequested,
 }

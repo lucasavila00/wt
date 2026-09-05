@@ -57,6 +57,22 @@ defmodule WtApi do
     )
   end
 
+  @doc "Resume a persisted thread and restore its visible window without starting a turn."
+  @spec resume_codex(Request.ResumeCodex.t()) ::
+          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
+  def resume_codex(request), do: resume_codex(Client.new(), request)
+
+  @spec resume_codex(Client.t(), Request.ResumeCodex.t()) ::
+          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
+  def resume_codex(client, %Request.ResumeCodex{} = request) do
+    call(
+      client,
+      request,
+      Result.InspectCodex,
+      &equal_identity(&1.thread_id, request.thread_id, "thread ID")
+    )
+  end
+
   @spec send_codex_message(Request.SendCodexMessage.t()) ::
           {:ok, Success.t(Result.SendCodexMessage.t())} | {:error, error()}
   def send_codex_message(request), do: send_codex_message(Client.new(), request)
@@ -70,6 +86,26 @@ defmodule WtApi do
       Result.SendCodexMessage,
       &equal_identity(&1.thread_id, request.thread_id, "thread ID")
     )
+  end
+
+  def steer_codex(request), do: steer_codex(Client.new(), request)
+
+  def steer_codex(client, %Request.SteerCodex{} = request) do
+    call(client, request, Result.SendCodexMessage, fn result ->
+      with :ok <- equal_identity(result.thread_id, request.thread_id, "thread ID"),
+           :ok <- equal_identity(result.turn_id, request.turn_id, "turn ID"),
+           do: :ok
+    end)
+  end
+
+  def interrupt_codex(request), do: interrupt_codex(Client.new(), request)
+
+  def interrupt_codex(client, %Request.InterruptCodex{} = request) do
+    call(client, request, Result.SendCodexMessage, fn result ->
+      with :ok <- equal_identity(result.thread_id, request.thread_id, "thread ID"),
+           :ok <- equal_identity(result.turn_id, request.turn_id, "turn ID"),
+           do: :ok
+    end)
   end
 
   @spec read_world_mail(Request.ReadWorldMail.t()) ::

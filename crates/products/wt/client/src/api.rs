@@ -22,7 +22,10 @@ impl Request {
             | Self::DeleteWorld { api_version, .. }
             | Self::StartCodex { api_version, .. }
             | Self::InspectCodex { api_version, .. }
+            | Self::ResumeCodex { api_version, .. }
             | Self::SendCodexMessage { api_version, .. }
+            | Self::SteerCodex { api_version, .. }
+            | Self::InterruptCodex { api_version, .. }
             | Self::ReadWorldMail { api_version, .. } => *api_version,
         }
     }
@@ -33,7 +36,10 @@ impl Request {
             | Self::DeleteWorld { request_id, .. }
             | Self::StartCodex { request_id, .. }
             | Self::InspectCodex { request_id, .. }
+            | Self::ResumeCodex { request_id, .. }
             | Self::SendCodexMessage { request_id, .. }
+            | Self::SteerCodex { request_id, .. }
+            | Self::InterruptCodex { request_id, .. }
             | Self::ReadWorldMail { request_id, .. } => request_id,
         }
     }
@@ -52,7 +58,16 @@ impl Request {
             | Self::InspectCodex {
                 expected_server_id, ..
             }
+            | Self::ResumeCodex {
+                expected_server_id, ..
+            }
             | Self::SendCodexMessage {
+                expected_server_id, ..
+            }
+            | Self::SteerCodex {
+                expected_server_id, ..
+            }
+            | Self::InterruptCodex {
                 expected_server_id, ..
             }
             | Self::ReadWorldMail {
@@ -77,6 +92,9 @@ impl From<wt_control_protocol::CodexMessageDelivery> for ApiCodexMessageDelivery
         match delivery {
             wt_control_protocol::CodexMessageDelivery::Steered => Self::Steered,
             wt_control_protocol::CodexMessageDelivery::Started => Self::Started,
+            wt_control_protocol::CodexMessageDelivery::InterruptRequested => {
+                Self::InterruptRequested
+            }
         }
     }
 }
@@ -296,6 +314,20 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 thread_id,
             },
         )),
+        Request::ResumeCodex {
+            context,
+            world_id,
+            thread_id,
+            ..
+        } => Ok((
+            context,
+            Operation::ResumeCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+            },
+        )),
         Request::SendCodexMessage {
             context,
             world_id,
@@ -310,6 +342,40 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                     .map_err(|_| "invalid world ID".to_owned())?,
                 thread_id,
                 message,
+            },
+        )),
+        Request::SteerCodex {
+            context,
+            world_id,
+            thread_id,
+            turn_id,
+            message,
+            ..
+        } => Ok((
+            context,
+            Operation::SteerCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+                turn_id,
+                message,
+            },
+        )),
+        Request::InterruptCodex {
+            context,
+            world_id,
+            thread_id,
+            turn_id,
+            ..
+        } => Ok((
+            context,
+            Operation::InterruptCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+                turn_id,
             },
         )),
         Request::ReadWorldMail {
@@ -340,10 +406,7 @@ fn call(
 ) -> Reply {
     let api_request = if matches!(
         &operation,
-        Operation::ListWorldMail { .. }
-            | Operation::StartCodex { .. }
-            | Operation::InspectCodex { .. }
-            | Operation::SendCodexMessage { .. }
+        Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
     ) {
         ApiRequest {
             protocol_version: wt_control_protocol::PROTOCOL_VERSION,

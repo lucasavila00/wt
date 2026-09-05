@@ -11,7 +11,9 @@ anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tungstenite = "0.28"
+tempfile.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
-tempfile.workspace = true

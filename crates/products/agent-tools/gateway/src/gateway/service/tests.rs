@@ -124,26 +124,29 @@ fn codex_completion_transport_commits_attributed_terminal_mail() {
         .unwrap();
     drop(store);
     let gateway = gateway(&temp);
-    let (mut client, server) = std::os::unix::net::UnixStream::pair().unwrap();
-    crate::write_json_line(
-        &mut client,
-        &TransportRequest {
-            protocol_version: PROTOCOL_VERSION,
-            operation: ClientOperation::CodexTurnFinished {
-                thread_id: "thread-1".into(),
-                turn_id: "turn-1".into(),
-                pane_id: "%3".into(),
-                status: crate::CodexTurnStatus::Completed,
-                message: "finished".into(),
+    // Replay after ACK loss, including after a pane disappears. Identity is the turn, not pane.
+    for pane in [Some("%3".to_owned()), None] {
+        let (mut client, server) = std::os::unix::net::UnixStream::pair().unwrap();
+        crate::write_json_line(
+            &mut client,
+            &TransportRequest {
+                protocol_version: PROTOCOL_VERSION,
+                operation: ClientOperation::CodexTurnFinished {
+                    thread_id: "thread-1".into(),
+                    turn_id: "turn-1".into(),
+                    pane_id: pane,
+                    status: crate::CodexTurnStatus::Completed,
+                    message: "finished".into(),
+                },
             },
-        },
-    )
-    .unwrap();
+        )
+        .unwrap();
 
-    gateway.handle_transport(server, world_id).unwrap();
+        gateway.handle_transport(server, world_id).unwrap();
 
-    let response: TransportResponse = crate::read_json_line(&mut client).unwrap();
-    assert!(response.ok);
+        let response: TransportResponse = crate::read_json_line(&mut client).unwrap();
+        assert!(response.ok);
+    }
     let page = wt_workload_registry::Store::open(&path)
         .unwrap()
         .list_world_mail("owner", world_id, 0, 10)

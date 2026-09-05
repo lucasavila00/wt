@@ -18,8 +18,8 @@ impl WorldWorker for UnusedWorker {
         Ok(wt_guest::CodexStart {
             thread_id: "thread-123".into(),
             turn_id: "turn-456".into(),
-            pane_id: "%7".into(),
-            window_name: "codex-thread-123".into(),
+            pane_id: Some("%7".into()),
+            window_name: Some("codex-thread-123".into()),
         })
     }
 
@@ -31,10 +31,26 @@ impl WorldWorker for UnusedWorker {
         Ok(wt_guest::CodexInspection {
             status: wt_guest::CodexRuntimeStatus::Active,
             active_turn_id: Some("turn-456".into()),
-            pane_id: "%7".into(),
-            window_name: "codex-thread-123".into(),
-            screen: "working".into(),
+            pane_id: Some("%7".into()),
+            window_name: Some("codex-thread-123".into()),
+            screen: Some("working".into()),
             observed_at_unix_ms: 1_800_000_000_000,
+        })
+    }
+
+    fn resume_codex(
+        &self,
+        _world_id: WorldId,
+        thread_id: &str,
+    ) -> Result<wt_guest::CodexInspection, WorkerError> {
+        assert_eq!(thread_id, "thread-123");
+        Ok(wt_guest::CodexInspection {
+            status: wt_guest::CodexRuntimeStatus::Idle,
+            active_turn_id: None,
+            pane_id: Some("%8".into()),
+            window_name: Some("codex".into()),
+            screen: Some("resumed".into()),
+            observed_at_unix_ms: 1_800_000_000_001,
         })
     }
 
@@ -49,7 +65,24 @@ impl WorldWorker for UnusedWorker {
         }
         Ok(wt_guest::CodexSend {
             turn_id: "turn-789".into(),
-            delivery: wt_guest::CodexMessageDelivery::Steered,
+            delivery: wt_guest::CodexMessageDelivery::Started,
+        })
+    }
+
+    fn control_codex_turn(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+        turn_id: &str,
+        message: Option<&str>,
+    ) -> Result<wt_guest::CodexSend, WorkerError> {
+        Ok(wt_guest::CodexSend {
+            turn_id: turn_id.into(),
+            delivery: if message.is_some() {
+                wt_guest::CodexMessageDelivery::Steered
+            } else {
+                wt_guest::CodexMessageDelivery::InterruptRequested
+            },
         })
     }
 
@@ -284,8 +317,8 @@ fn api_controls_an_ephemeral_codex_session() {
     };
     assert_eq!(thread_id, "thread-123");
     assert_eq!(turn_id, "turn-456");
-    assert_eq!(pane_id, "%7");
-    assert_eq!(window_name, "codex-thread-123");
+    assert_eq!(pane_id.as_deref(), Some("%7"));
+    assert_eq!(window_name.as_deref(), Some("codex-thread-123"));
 
     let inspected = service.execute_api_read(
         "owner",
@@ -304,8 +337,44 @@ fn api_controls_an_ephemeral_codex_session() {
                 ref active_turn_id,
                 ref screen,
                 ..
-            } if active_turn_id.as_deref() == Some("turn-456") && screen == "working")
+            } if active_turn_id.as_deref() == Some("turn-456") && screen.as_deref() == Some("working"))
     ));
+
+    let resume_id = uuid::Uuid::new_v4();
+    let resume = || Operation::ResumeCodex {
+        world_id,
+        thread_id: thread_id.clone(),
+    };
+    let resumed = service.execute_api_mutation(
+        "owner",
+        resume_id,
+        Some(&"c".repeat(64)),
+        None,
+        resume(),
+        &mut std::io::sink(),
+    );
+    assert!(matches!(&resumed.outcome, Outcome::Ok { response }
+        if matches!(response.as_ref(), Response::CodexInspection {
+            status: wt_control_protocol::CodexStatus::Idle, active_turn_id: None,
+            pane_id, ..
+        } if pane_id.as_deref() == Some("%8"))
+    ));
+    let replay = service.execute_api_mutation(
+        "owner",
+        resume_id,
+        Some(&"c".repeat(64)),
+        None,
+        resume(),
+        &mut std::io::sink(),
+    );
+    assert_eq!(
+        serde_json::to_value(&resumed).unwrap(),
+        serde_json::to_value(&replay).unwrap()
+    );
+    let read = service.execute_api_read("owner", uuid::Uuid::new_v4(), None, resume());
+    assert!(
+        matches!(read.outcome, Outcome::Error { error } if error.code == ErrorCode::InvalidRequest)
+    );
 
     let sent = service.execute_api_mutation(
         "owner",
@@ -319,20 +388,130 @@ fn api_controls_an_ephemeral_codex_session() {
         },
         &mut std::io::sink(),
     );
-    assert!(matches!(
-        sent.outcome,
-        Outcome::Ok { response }
-            if matches!(*response, Response::CodexMessageSent {
-                delivery: wt_control_protocol::CodexMessageDelivery::Steered,
-                ..
-            })
-    ));
+    assert!(
+        matches!(sent.outcome, Outcome::Error { error } if error.code == ErrorCode::Conflict && error.retryable)
+    );
+    for operation in [
+        Operation::SteerCodex {
+            world_id,
+            thread_id: "thread-123".into(),
+            turn_id: "turn-456".into(),
+            message: "focus".into(),
+        },
+        Operation::InterruptCodex {
+            world_id,
+            thread_id: "thread-123".into(),
+            turn_id: "turn-456".into(),
+        },
+    ] {
+        let id = uuid::Uuid::new_v4();
+        let hash = "f".repeat(64);
+        let result = service.execute_api_mutation(
+            "owner",
+            id,
+            Some(&hash),
+            None,
+            serde_json::from_value(serde_json::to_value(&operation).unwrap()).unwrap(),
+            &mut std::io::sink(),
+        );
+        assert!(
+            matches!(&result.outcome, Outcome::Ok { response } if matches!(**response, Response::CodexMessageSent { ref turn_id, .. } if turn_id == "turn-456"))
+        );
+        let replay = service.execute_api_mutation(
+            "owner",
+            id,
+            Some(&hash),
+            None,
+            operation,
+            &mut std::io::sink(),
+        );
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            serde_json::to_value(replay).unwrap()
+        );
+    }
     assert!(service
         .store
         .list_world_mail("owner", world_id, 0, 10)
         .unwrap()
         .messages
         .is_empty());
+
+    // A lost guest response may follow accepted work. Persist uncertainty instead of
+    // freeing the reservation for another submission of the same mutation.
+    let uncertain_id = uuid::Uuid::new_v4();
+    let uncertain = service.execute_api_mutation(
+        "owner",
+        uncertain_id,
+        Some(&"d".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "fail".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(&uncertain.outcome, Outcome::Error { error }
+        if error.code == ErrorCode::Backend && !error.retryable));
+    assert!(uncertain.expires_at_unix_ms.is_some());
+    // The worker would succeed for this message if replay accidentally ran it again.
+    let replay = service.execute_api_mutation(
+        "owner",
+        uncertain_id,
+        Some(&"d".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert_eq!(
+        serde_json::to_value(uncertain).unwrap(),
+        serde_json::to_value(replay).unwrap()
+    );
+
+    // Lose the result at the real SQLite boundary after the guest operation returns.
+    use diesel::{Connection, RunQueryDsl};
+    let path = temp.path().join("instances.db");
+    let mut database = diesel::SqliteConnection::establish(path.to_str().unwrap()).unwrap();
+    diesel::sql_query("CREATE TRIGGER reject_api_result BEFORE UPDATE OF response_json ON api_mutation_results BEGIN SELECT RAISE(FAIL, 'result storage unavailable'); END")
+        .execute(&mut database).unwrap();
+    let lost_id = uuid::Uuid::new_v4();
+    let lost = service.execute_api_mutation(
+        "owner",
+        lost_id,
+        Some(&"e".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(lost.outcome, Outcome::Error { error }
+        if error.code == ErrorCode::Internal && !error.retryable));
+    diesel::sql_query("DROP TRIGGER reject_api_result")
+        .execute(&mut database)
+        .unwrap();
+    drop(service);
+    let reopened = Store::open(&path).unwrap();
+    // Startup cleanup may release ordinary world operations, but not uncertain Codex work.
+    reopened.clear_incomplete_api_mutations().unwrap();
+    let service = test_service(reopened);
+    let replay = service.execute_api_mutation(
+        "owner",
+        lost_id,
+        Some(&"e".repeat(64)),
+        None,
+        Operation::StartCodex {
+            world_id,
+            message: "review".into(),
+        },
+        &mut std::io::sink(),
+    );
+    assert!(matches!(replay.outcome, Outcome::Error { error }
+        if error.code == ErrorCode::Conflict && error.message == "request is still in progress"));
 }
 
 #[test]

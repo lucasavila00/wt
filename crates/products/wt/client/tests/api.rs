@@ -26,9 +26,7 @@ set -eu
 request=$(cat)
 case "$request" in
   *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"operation":"list_world_mail"'*) ;;
-  *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"operation":"start_codex"'*) ;;
   *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"operation":"inspect_codex"'*) ;;
-  *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"operation":"send_codex_message"'*) ;;
   *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"request_hash":"'*) ;;
   *) exit 3 ;;
 esac

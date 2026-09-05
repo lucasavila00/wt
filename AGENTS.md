@@ -74,7 +74,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   `rustup component add rustfmt clippy`. Use `sudo apt-get` only for missing
   system prerequisites such as `curl`.
 - In a fresh Ubuntu guest, install the repository system prerequisites with
-  `sudo apt-get update && sudo apt-get install -y shellcheck libvirt-dev`.
+  `sudo apt-get update && sudo apt-get install -y shellcheck libvirt-dev tmux`.
   Use Node.js and npm only through NVM: source `$HOME/.nvm/nvm.sh`, then run
   `nvm install` and `nvm use` using the repository's `.nvmrc` (Node `24.19.0`
   with npm `11.17.0`), and run `npm ci` from the repository root. Do not

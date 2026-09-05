@@ -69,7 +69,7 @@ pub enum ClientOperation {
     CodexTurnFinished {
         thread_id: String,
         turn_id: String,
-        pane_id: String,
+        pane_id: Option<String>,
         status: CodexTurnStatus,
         message: String,
     },

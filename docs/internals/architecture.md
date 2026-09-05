@@ -56,11 +56,16 @@ those observations and keeps each world's complete latest snapshot only in
 memory. No live pane observation is registry state. No Codex hook or lifecycle
 tracker participates in live state.
 
-Each world uses one guest-local Codex App Server daemon. WT runs the native Codex TUI with
+Each world uses one systemd-supervised Codex App Server on a guest-local Unix WebSocket. WT runs the native Codex TUI with
 `--remote` in a dedicated window of the world's shared Byobu session for each delegated thread.
 App Server owns live thread and turn state, and a tmux pane option associates each visible TUI with
-its thread. Start, inspect, and send operations use that guest runtime; WT-started turns publish
-their terminal result through the durable world mailbox.
+its thread. Start, inspect, and send work independently of terminal availability. A supervised
+worker durably tracks threads before submission, reconciles stored turns, and retries terminal
+delivery. The registry deduplicates completions by world/thread/turn.
+After a guest restart, `resume_codex` reopens a persisted thread's missing visible window and
+resumes its history without submitting a message. Send remains separate; resume does not create a
+replacement thread or restore the interrupted turn. A retained unfinished turn with no loaded
+runtime receives an explicit WT recovery failure, never automatic prompt replay. See ADR 0086.
 
 ## Shell playback
 
