@@ -16,7 +16,7 @@ cat >&2 <<EOF
 WT: This is a WT-managed development environment for a coding agent.
 WT: For safety, the developer's SSH keys and GitHub or GitLab credentials are
 WT: not available here. Do not look for credentials or use gh or glab.
-WT: WT gives you read access to every repository available to the Git gateway.
+WT: You can read every repository configured for access from WT worlds.
 WT: This checkout is project $project and its configured base is $base.
 WT: Use normal Git for commits, fetches, pulls, and pushes. Every WT world can
 WT: write branches under $prefix in any available repository.
@@ -45,7 +45,7 @@ commit)
 WT: Commit created on $branch.
 WT: Publish it with:
 WT:   git push
-WT: After pushing, use the explicit wtg tools commands printed by the Git gateway.
+WT: After pushing, use the explicit wtg tools commands printed in the push output.
 EOF
     ;;
 *)

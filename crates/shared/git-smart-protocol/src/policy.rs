@@ -71,7 +71,7 @@ impl std::fmt::Display for PushViolation {
             Self::Deletion { reference } => {
                 write!(
                     formatter,
-                    "branch `{reference}` cannot be deleted; gateway preserves history"
+                    "branch `{reference}` cannot be deleted; pushes must preserve history"
                 )
             }
             Self::NonBranch { .. } => {
@@ -178,6 +178,6 @@ mod tests {
         )
         .unwrap();
         section.extend_from_slice(b"0000");
-        insta::assert_snapshot!(validate_push(&section, &policy).unwrap_err().to_string(), @"branch `refs/heads/main` cannot be deleted; gateway preserves history");
+        insta::assert_snapshot!(validate_push(&section, &policy).unwrap_err().to_string(), @"branch `refs/heads/main` cannot be deleted; pushes must preserve history");
     }
 }

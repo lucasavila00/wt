@@ -176,7 +176,7 @@ fn rejects_rewrites_noncommits_and_corrupt_objects() {
     };
     let request = commands(&[(&second, &first, "refs/heads/main")]);
     let mut incoming = std::io::Cursor::new(pack(&repository, &first, Some(&second)));
-    insta::assert_snapshot!(validated_pack(&mut incoming, &target, &request).unwrap_err().to_string(), @"non-fast-forward update to `refs/heads/main` rejected; gateway preserves history");
+    insta::assert_snapshot!(validated_pack(&mut incoming, &target, &request).unwrap_err().to_string(), @"non-fast-forward update to `refs/heads/main` rejected; pushes must preserve history");
 
     let request = commands(&[(&second, &blob, "refs/heads/main")]);
     let mut incoming = std::io::Cursor::new(pack(&repository, &blob, None));

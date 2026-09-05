@@ -236,11 +236,7 @@ pub fn serve_git<S: DuplexStream>(
     let pack = match crate::staging::validated_pack(stream, &target, &commands) {
         Ok(pack) => pack,
         Err(error) => {
-            reject_push(
-                stream,
-                &commands,
-                &format!("gateway history validation failed: {error:#}"),
-            )?;
+            reject_push(stream, &commands, &format!("push rejected: {error:#}"))?;
             return Ok(GitServeResult::default());
         }
     };
@@ -476,10 +472,10 @@ mod tests {
         );
         let error = anyhow::anyhow!("read Git packet header")
             .context(provider_error_context(Some("github.com"), openssh));
-        let rendered = format!("WT Git gateway failed: {error:#}");
+        let rendered = format!("WT Git operation failed: {error:#}");
 
         insta::assert_snapshot!(rendered, @r###"
-        WT Git gateway failed: Git provider host key verification failed for github.com.
+        WT Git operation failed: Git provider host key verification failed for github.com.
         The configured SSH host-key pin does not match the provider.
         Update the known-hosts input for the service that launched this Git operation, then reinstall that service.
         This cannot be repaired by the downstream Git client.: read Git packet header

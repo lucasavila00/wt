@@ -151,7 +151,7 @@ pub(crate) fn validated_pack(
                 .status()?;
             if !status.success() {
                 bail!(
-                    "non-fast-forward update to `{}` rejected; gateway preserves history",
+                    "non-fast-forward update to `{}` rejected; pushes must preserve history",
                     update.reference
                 );
             }

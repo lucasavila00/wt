@@ -62,7 +62,7 @@ pub fn run_from(args: impl IntoIterator<Item = String>) -> Result<()> {
             response
                 .error
                 .as_deref()
-                .unwrap_or("gateway rejected Git operation")
+                .unwrap_or("Git operation rejected")
         );
     }
     if let Some(message) = response.message {
