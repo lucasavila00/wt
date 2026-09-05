@@ -30,6 +30,9 @@ fn install_and_update_keep_interactive_codex_and_user_state() {
         fs::write(home.join(name), format!("original {name}\n")).unwrap();
     }
     executable(&fixtures.join("agapi"), "#!/bin/sh\necho agapi\n");
+    let image_binary = fixtures.join("image-agapi");
+    fs::write(&image_binary, "image-provided agapi").unwrap();
+    std::os::unix::fs::symlink(&image_binary, home.join(".local/bin/agapi")).unwrap();
     // Model the upstream installer's configurable binary/package destinations.
     executable(
         &fixtures.join("installer"),
@@ -114,5 +117,10 @@ cp "$FIXTURES/$source" "$4"
             format!("codex-cli {version}")
         );
         assert!(home.join(".local/bin/agapi").is_file());
+        assert!(!home.join(".local/bin/agapi").is_symlink());
+        assert_eq!(
+            fs::read_to_string(&image_binary).unwrap(),
+            "image-provided agapi"
+        );
     }
 }

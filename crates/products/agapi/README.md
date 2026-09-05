@@ -5,6 +5,18 @@ build tooling, not WT's runtime or release lifecycle. Neither wtg nor wts links 
 
 ## Run locally or inside an existing world
 
+New WT images include `agapi` and its matching private Codex binary. Start the
+preinstalled pair with:
+
+```sh
+agapi --state-dir "$HOME/.local/state/agapi/my-project" serve \
+  --workspace /absolute/workspace \
+  --codex "$HOME/.local/share/agapi/codex/bin/codex"
+```
+
+WT builds the standalone executable from the image's checkout; it does not
+start a service. For a local source build:
+
 ```sh
 cargo build --release -p agapi
 target/release/agapi --state-dir /absolute/agapi-state serve \
@@ -63,6 +75,8 @@ required. The installer keeps its Codex binary at
 It does not replace the interactive `codex` command, alter shell profiles, or
 overwrite Codex configuration or credentials. At runtime, Codex still uses the
 normal `~/.codex` home, including WT's shared authentication and session mounts.
+In WT worlds the installer replaces the initial `~/.local/bin/agapi` symlink
+with the updated executable, which takes precedence over `/usr/local/bin/agapi`.
 
 ## Verify
 
