@@ -1,6 +1,6 @@
 # ADR 0084: Give every world a parent mailbox
 
-- Status: Accepted
+- Status: Superseded by ADR 0087
 - Date: 2026-09-03
 
 ## Context

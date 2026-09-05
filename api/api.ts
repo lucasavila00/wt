@@ -61,24 +61,12 @@ export type DeleteWorldRequest = {
   world_id: Uuid;
 };
 
-export type ReadWorldMailRequest = {
-  api_version: 1;
-  request_id: Uuid;
-  expected_server_id?: Uuid;
-  context: string;
-  operation: "read_world_mail";
-  world_id: Uuid;
-  after_message_id: UInt64;
-  limit: UInt32;
-};
-
 export type Request =
   | ExecWorldRequest
   | ListContextsRequest
   | ListWorldsRequest
   | CreateWorldRequest
-  | DeleteWorldRequest
-  | ReadWorldMailRequest;
+  | DeleteWorldRequest;
 
 export type SshAccess = {
   user: string;
@@ -99,34 +87,17 @@ export type World = {
   ssh?: SshAccess;
 };
 
-export type WorldMail = {
-  message_id: UInt64;
-  world_id: Uuid;
-  thread_id?: string;
-  turn_id?: string;
-  pane_id?: string;
-  created_at_unix_ms: Int64;
-  kind: "message" | "completed" | "failed";
-  text: string;
-};
-
 export type CreateWorldResult = { world: World };
 export type ListContextsResult = { contexts: string[] };
 export type ListWorldsResult = { worlds: World[] };
 export type DeleteWorldResult = { world_id: Uuid };
-
-export type ReadWorldMailResult = {
-  messages: WorldMail[];
-  high_water_message_id: UInt64;
-};
 
 export type Result =
   | ExecWorldResult
   | ListContextsResult
   | ListWorldsResult
   | CreateWorldResult
-  | DeleteWorldResult
-  | ReadWorldMailResult;
+  | DeleteWorldResult;
 
 export type CapacityDetails = {
   kind: "capacity";

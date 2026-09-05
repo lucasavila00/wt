@@ -81,38 +81,6 @@ impl Gateway {
                 };
                 crate::write_json_line(&mut stream, &response)
             }
-            ClientOperation::SendMessageToParent { message } => {
-                let response = match self
-                    .activity
-                    .record_world_mail(authorized.world_id, &message)
-                {
-                    Ok(()) => TransportResponse::with_message(api::render_cli_confirmation(
-                        "Sent message to parent.".to_owned(),
-                    )),
-                    Err(error) => TransportResponse::error(format!("{error:#}")),
-                };
-                crate::write_json_line(&mut stream, &response)
-            }
-            ClientOperation::CodexTurnFinished {
-                thread_id,
-                turn_id,
-                pane_id,
-                status,
-                message,
-            } => {
-                let response = match self.activity.record_codex_result(
-                    authorized.world_id,
-                    &thread_id,
-                    &turn_id,
-                    pane_id.as_deref(),
-                    status,
-                    &message,
-                ) {
-                    Ok(()) => TransportResponse::ok(),
-                    Err(error) => TransportResponse::error(format!("{error:#}")),
-                };
-                crate::write_json_line(&mut stream, &response)
-            }
             ClientOperation::PaneObservations { panes } => {
                 let response = match self.store_pane_observations(&panes, &authorized) {
                     Ok(()) => TransportResponse::ok(),
@@ -206,32 +174,6 @@ impl Gateway {
             .map_err(|_| anyhow::anyhow!("pane observation lock poisoned"))?;
         if observations.inactive_worlds.contains(&world_id) {
             bail!("agent tools are inactive for this world");
-        }
-        if let ClientOperation::SendMessageToParent { message }
-        | ClientOperation::CodexTurnFinished { message, .. } = &request.operation
-        {
-            if message.is_empty() || message.len() > wt_workload_registry::MAX_MAIL_MESSAGE_BYTES {
-                bail!(
-                    "message must contain 1 to {} UTF-8 bytes",
-                    wt_workload_registry::MAX_MAIL_MESSAGE_BYTES
-                );
-            }
-        }
-        if let ClientOperation::CodexTurnFinished {
-            thread_id,
-            turn_id,
-            pane_id,
-            ..
-        } = &request.operation
-        {
-            if thread_id.is_empty()
-                || turn_id.is_empty()
-                || pane_id
-                    .as_deref()
-                    .is_some_and(|pane| !crate::valid_byobu_pane_id(pane))
-            {
-                bail!("invalid Codex turn identity");
-            }
         }
         let pane_generation =
             if matches!(&request.operation, ClientOperation::PaneObservations { .. }) {
@@ -361,9 +303,6 @@ impl Gateway {
                 return Ok(api::render_cli_confirmation(
                     "Recorded wtg tools report for this world.",
                 ));
-            }
-            api::WtToolsCommand::World { .. } => {
-                bail!("send_message_to_parent must be sent by the guest relay")
             }
             api::WtToolsCommand::GitHosting { target, command } => (target, command),
         };

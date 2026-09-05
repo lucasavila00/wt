@@ -13,7 +13,6 @@ mod api;
 mod exec;
 mod gateway;
 mod lifecycle;
-mod mail;
 mod pane;
 mod reports;
 #[cfg(test)]
@@ -96,7 +95,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             }
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
-            operation @ Operation::ListWorldMail { .. } => self.list_world_mail(owner, operation),
             Operation::ListPaneObservations => self.list_pane_observations(owner),
             Operation::ListGitActivity { query } => self.list_git_activity(owner, query),
             Operation::ListWtToolsActivity { query } => self.list_wt_tools_activity(owner, query),

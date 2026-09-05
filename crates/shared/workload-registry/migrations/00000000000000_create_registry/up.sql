@@ -87,20 +87,3 @@ CREATE TABLE api_mutation_results (
 
 CREATE INDEX api_mutation_results_expiration
     ON api_mutation_results (expires_at_unix_ms);
-
-CREATE TABLE world_mail (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    world_id            TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
-    created_at_unix_ms  BIGINT NOT NULL,
-    message             TEXT NOT NULL
-);
-
-CREATE INDEX world_mail_world_id_id ON world_mail(world_id, id);
-
-CREATE TABLE codex_result_deliveries (
-    world_id TEXT NOT NULL REFERENCES worlds(world_id) ON DELETE CASCADE,
-    thread_id TEXT NOT NULL,
-    turn_id TEXT NOT NULL,
-    mail_id BIGINT NOT NULL REFERENCES world_mail(id) ON DELETE CASCADE,
-    PRIMARY KEY (world_id, thread_id, turn_id)
-);

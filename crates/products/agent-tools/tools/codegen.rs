@@ -75,11 +75,7 @@ fn emit_alias(path: &str, alias: &TsTypeAliasDecl, output: &mut String) -> Resul
             writeln!(output, "}}\n").unwrap();
         }
         ty if name == "GitHostingTarget" => emit_object(path, name, ty, output)?,
-        ty if matches!(
-            name,
-            "GitHostingCommand" | "WtToolsFeedbackCommand" | "WtToolsWorldCommand"
-        ) =>
-        {
+        ty if matches!(name, "GitHostingCommand" | "WtToolsFeedbackCommand") => {
             emit_commands(path, name, ty, output)?
         }
         ty if name == "WtToolsCommand" => emit_envelope(path, ty, output)?,
@@ -110,8 +106,8 @@ fn emit_envelope(path: &str, ty: &TsType, output: &mut String) -> Result<(), Str
             return Err(format!("{path}: `WtToolsCommand` must be an object union"));
         }
     };
-    if members.len() != 3 {
-        return Err(format!("{path}: `WtToolsCommand` must have three members"));
+    if members.len() != 2 {
+        return Err(format!("{path}: `WtToolsCommand` must have two members"));
     }
     writeln!(
         output,
@@ -122,8 +118,6 @@ fn emit_envelope(path: &str, ty: &TsType, output: &mut String) -> Result<(), Str
         let fields = object_fields(path, member)?;
         let variant = if fields.iter().any(|field| field.0 == "target") {
             "GitHosting"
-        } else if fields.iter().any(|field| matches!(field.2, TsType::TsTypeRef(reference) if reference.type_name.as_ident().is_some_and(|name| name.sym == *"WtToolsWorldCommand"))) {
-            "World"
         } else {
             "Feedback"
         };

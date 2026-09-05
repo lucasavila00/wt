@@ -8,10 +8,6 @@ endpoint. World listings use creation order. The UUID also
 names the world's disk; neither a disk identifier nor a libvirt domain name is
 stored in the registry.
 `agent_tool_reports` stores `wtg tools` feedback and is deleted with its world.
-`world_mail` stores durable world-scoped messages and is deleted with its world.
-The schema retains Codex result envelopes and a `codex_result_deliveries`
-deduplication table, but WT no longer runs an agent completion service.
-Controllers own agent execution and terminal result delivery (ADR 0086).
 The registry does not store live terminal observations, rendered terminal
 contents, Byobu window presentation, raw Codex events, or agent-tool
 authorization state.

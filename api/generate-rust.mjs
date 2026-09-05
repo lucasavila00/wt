@@ -33,14 +33,12 @@ const primitiveRefs = {
 const objectNames = {
   SshAccess: "ApiSshAccess",
   World: "ApiWorld",
-  WorldMail: "ApiWorldMail",
   CapacityDetails: "ApiCapacityDetails",
   Error: "ApiError",
 };
 
 const enumNames = {
   "World.status": "ApiWorldStatus",
-  "WorldMail.kind": "ApiMailKind",
   "CapacityDetails.resource": "ApiCapacityResource",
 };
 

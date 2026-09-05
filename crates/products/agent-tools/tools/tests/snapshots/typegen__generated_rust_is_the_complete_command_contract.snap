@@ -179,15 +179,6 @@ pub enum WtToolsFeedbackCommand {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(tag = "action", deny_unknown_fields)]
-pub enum WtToolsWorldCommand {
-    #[serde(rename = "send_message_to_parent")]
-    SendMessageToParent {
-        message: String,
-    },
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum WtToolsCommand {
     GitHosting {
@@ -196,8 +187,5 @@ pub enum WtToolsCommand {
     },
     Feedback {
         command: WtToolsFeedbackCommand,
-    },
-    World {
-        command: WtToolsWorldCommand,
     },
 }

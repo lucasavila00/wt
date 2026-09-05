@@ -14,21 +14,8 @@ impl WtToolsCommand {
                 command.validate()?;
             }
             Self::Feedback { command } => command.validate()?,
-            Self::World { command } => command.validate()?,
         }
         Ok(parsed)
-    }
-}
-
-impl WtToolsWorldCommand {
-    fn validate(&self) -> Result<()> {
-        let Self::SendMessageToParent { message } = self;
-        nonempty(message, "message")
-    }
-
-    pub fn parent_message(&self) -> &str {
-        let Self::SendMessageToParent { message } = self;
-        message
     }
 }
 
