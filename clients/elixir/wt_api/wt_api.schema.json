@@ -116,7 +116,7 @@
       ],
       "additionalProperties": false
     },
-    "InspectCodexRequest": {
+    "ExecWorldRequest": {
       "type": "object",
       "properties": {
         "api_version": {
@@ -125,7 +125,16 @@
             1
           ]
         },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "context": {
+          "type": "string"
+        },
+        "executable": {
           "type": "string"
         },
         "expected_server_id": {
@@ -134,13 +143,13 @@
         "operation": {
           "type": "string",
           "enum": [
-            "inspect_codex"
+            "exec_world"
           ]
         },
         "request_id": {
           "$ref": "#/$defs/Uuid"
         },
-        "thread_id": {
+        "stdin": {
           "type": "string"
         },
         "world_id": {
@@ -149,55 +158,12 @@
       },
       "required": [
         "api_version",
+        "args",
         "context",
+        "executable",
         "operation",
         "request_id",
-        "thread_id",
-        "world_id"
-      ],
-      "additionalProperties": false
-    },
-    "InterruptCodexRequest": {
-      "type": "object",
-      "properties": {
-        "api_version": {
-          "type": "number",
-          "enum": [
-            1
-          ]
-        },
-        "context": {
-          "type": "string"
-        },
-        "expected_server_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "operation": {
-          "type": "string",
-          "enum": [
-            "interrupt_codex"
-          ]
-        },
-        "request_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "thread_id": {
-          "type": "string"
-        },
-        "turn_id": {
-          "type": "string"
-        },
-        "world_id": {
-          "$ref": "#/$defs/Uuid"
-        }
-      },
-      "required": [
-        "api_version",
-        "context",
-        "operation",
-        "request_id",
-        "thread_id",
-        "turn_id",
+        "stdin",
         "world_id"
       ],
       "additionalProperties": false
@@ -306,182 +272,6 @@
       ],
       "additionalProperties": false
     },
-    "ResumeCodexRequest": {
-      "type": "object",
-      "properties": {
-        "api_version": {
-          "type": "number",
-          "enum": [
-            1
-          ]
-        },
-        "context": {
-          "type": "string"
-        },
-        "expected_server_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "operation": {
-          "type": "string",
-          "enum": [
-            "resume_codex"
-          ]
-        },
-        "request_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "thread_id": {
-          "type": "string"
-        },
-        "world_id": {
-          "$ref": "#/$defs/Uuid"
-        }
-      },
-      "required": [
-        "api_version",
-        "context",
-        "operation",
-        "request_id",
-        "thread_id",
-        "world_id"
-      ],
-      "additionalProperties": false
-    },
-    "SendCodexMessageRequest": {
-      "type": "object",
-      "properties": {
-        "api_version": {
-          "type": "number",
-          "enum": [
-            1
-          ]
-        },
-        "context": {
-          "type": "string"
-        },
-        "expected_server_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "message": {
-          "type": "string"
-        },
-        "operation": {
-          "type": "string",
-          "enum": [
-            "send_codex_message"
-          ]
-        },
-        "request_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "thread_id": {
-          "type": "string"
-        },
-        "world_id": {
-          "$ref": "#/$defs/Uuid"
-        }
-      },
-      "required": [
-        "api_version",
-        "context",
-        "message",
-        "operation",
-        "request_id",
-        "thread_id",
-        "world_id"
-      ],
-      "additionalProperties": false
-    },
-    "StartCodexRequest": {
-      "type": "object",
-      "properties": {
-        "api_version": {
-          "type": "number",
-          "enum": [
-            1
-          ]
-        },
-        "context": {
-          "type": "string"
-        },
-        "expected_server_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "message": {
-          "type": "string"
-        },
-        "operation": {
-          "type": "string",
-          "enum": [
-            "start_codex"
-          ]
-        },
-        "request_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "world_id": {
-          "$ref": "#/$defs/Uuid"
-        }
-      },
-      "required": [
-        "api_version",
-        "context",
-        "message",
-        "operation",
-        "request_id",
-        "world_id"
-      ],
-      "additionalProperties": false
-    },
-    "SteerCodexRequest": {
-      "type": "object",
-      "properties": {
-        "api_version": {
-          "type": "number",
-          "enum": [
-            1
-          ]
-        },
-        "context": {
-          "type": "string"
-        },
-        "expected_server_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "message": {
-          "type": "string"
-        },
-        "operation": {
-          "type": "string",
-          "enum": [
-            "steer_codex"
-          ]
-        },
-        "request_id": {
-          "$ref": "#/$defs/Uuid"
-        },
-        "thread_id": {
-          "type": "string"
-        },
-        "turn_id": {
-          "type": "string"
-        },
-        "world_id": {
-          "$ref": "#/$defs/Uuid"
-        }
-      },
-      "required": [
-        "api_version",
-        "context",
-        "message",
-        "operation",
-        "request_id",
-        "thread_id",
-        "turn_id",
-        "world_id"
-      ],
-      "additionalProperties": false
-    },
     "Request": {
       "type": "object",
       "discriminator": {
@@ -489,15 +279,10 @@
         "mapping": {
           "create_world": "#/$defs/CreateWorldRequest",
           "delete_world": "#/$defs/DeleteWorldRequest",
-          "inspect_codex": "#/$defs/InspectCodexRequest",
-          "interrupt_codex": "#/$defs/InterruptCodexRequest",
+          "exec_world": "#/$defs/ExecWorldRequest",
           "list_contexts": "#/$defs/ListContextsRequest",
           "list_worlds": "#/$defs/ListWorldsRequest",
-          "read_world_mail": "#/$defs/ReadWorldMailRequest",
-          "resume_codex": "#/$defs/ResumeCodexRequest",
-          "send_codex_message": "#/$defs/SendCodexMessageRequest",
-          "start_codex": "#/$defs/StartCodexRequest",
-          "steer_codex": "#/$defs/SteerCodexRequest"
+          "read_world_mail": "#/$defs/ReadWorldMailRequest"
         }
       },
       "oneOf": [
@@ -508,10 +293,7 @@
           "$ref": "#/$defs/DeleteWorldRequest"
         },
         {
-          "$ref": "#/$defs/InspectCodexRequest"
-        },
-        {
-          "$ref": "#/$defs/InterruptCodexRequest"
+          "$ref": "#/$defs/ExecWorldRequest"
         },
         {
           "$ref": "#/$defs/ListContextsRequest"
@@ -521,18 +303,6 @@
         },
         {
           "$ref": "#/$defs/ReadWorldMailRequest"
-        },
-        {
-          "$ref": "#/$defs/ResumeCodexRequest"
-        },
-        {
-          "$ref": "#/$defs/SendCodexMessageRequest"
-        },
-        {
-          "$ref": "#/$defs/StartCodexRequest"
-        },
-        {
-          "$ref": "#/$defs/SteerCodexRequest"
         }
       ]
     },
@@ -737,40 +507,23 @@
       ],
       "additionalProperties": false
     },
-    "InspectCodexResult": {
+    "ExecWorldResult": {
       "type": "object",
       "properties": {
-        "active_turn_id": {
-          "type": "string"
-        },
-        "observed_at_unix_ms": {
+        "exit_status": {
           "$ref": "#/$defs/Int64"
         },
-        "pane_id": {
+        "stderr": {
           "type": "string"
         },
-        "screen": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "active",
-            "error",
-            "idle"
-          ]
-        },
-        "thread_id": {
-          "type": "string"
-        },
-        "window_name": {
+        "stdout": {
           "type": "string"
         }
       },
       "required": [
-        "observed_at_unix_ms",
-        "status",
-        "thread_id"
+        "exit_status",
+        "stderr",
+        "stdout"
       ],
       "additionalProperties": false
     },
@@ -865,53 +618,6 @@
       ],
       "additionalProperties": false
     },
-    "SendCodexMessageResult": {
-      "type": "object",
-      "properties": {
-        "delivery": {
-          "type": "string",
-          "enum": [
-            "interrupt_requested",
-            "started",
-            "steered"
-          ]
-        },
-        "thread_id": {
-          "type": "string"
-        },
-        "turn_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "delivery",
-        "thread_id",
-        "turn_id"
-      ],
-      "additionalProperties": false
-    },
-    "StartCodexResult": {
-      "type": "object",
-      "properties": {
-        "pane_id": {
-          "type": "string"
-        },
-        "thread_id": {
-          "type": "string"
-        },
-        "turn_id": {
-          "type": "string"
-        },
-        "window_name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "thread_id",
-        "turn_id"
-      ],
-      "additionalProperties": false
-    },
     "Result": {
       "anyOf": [
         {
@@ -921,7 +627,7 @@
           "$ref": "#/$defs/DeleteWorldResult"
         },
         {
-          "$ref": "#/$defs/InspectCodexResult"
+          "$ref": "#/$defs/ExecWorldResult"
         },
         {
           "$ref": "#/$defs/ListContextsResult"
@@ -931,12 +637,6 @@
         },
         {
           "$ref": "#/$defs/ReadWorldMailResult"
-        },
-        {
-          "$ref": "#/$defs/SendCodexMessageResult"
-        },
-        {
-          "$ref": "#/$defs/StartCodexResult"
         }
       ]
     },

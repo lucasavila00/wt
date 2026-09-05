@@ -23,9 +23,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         }
         if !matches!(
             operation,
-            Operation::ListWorlds
-                | Operation::ListWorldMail { .. }
-                | Operation::InspectCodex { .. }
+            Operation::ListWorlds | Operation::ExecWorld { .. } | Operation::ListWorldMail { .. }
         ) {
             return ApiResponse::error(ApiError::new(
                 ErrorCode::InvalidRequest,
@@ -62,13 +60,7 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         }
         if !matches!(
             operation,
-            Operation::CreateWorld(_)
-                | Operation::DeleteWorld { .. }
-                | Operation::StartCodex { .. }
-                | Operation::ResumeCodex { .. }
-                | Operation::SendCodexMessage { .. }
-                | Operation::SteerCodex { .. }
-                | Operation::InterruptCodex { .. }
+            Operation::CreateWorld(_) | Operation::DeleteWorld { .. }
         ) {
             return ApiResponse::error(ApiError::new(
                 ErrorCode::InvalidRequest,
@@ -85,19 +77,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             ))
             .with_request_metadata(request_id, server_id, None);
         };
-        match self.store.begin_api_mutation(
-            owner,
-            request_id,
-            request_hash,
-            matches!(
-                operation,
-                Operation::StartCodex { .. }
-                    | Operation::ResumeCodex { .. }
-                    | Operation::SendCodexMessage { .. }
-                    | Operation::SteerCodex { .. }
-                    | Operation::InterruptCodex { .. }
-            ),
-        ) {
+        match self
+            .store
+            .begin_api_mutation(owner, request_id, request_hash, false)
+        {
             Ok(wt_workload_registry::ApiMutationStart::Replay {
                 response_json,
                 expires_at_unix_ms,
@@ -154,14 +137,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::DeleteWorld { world_id } => Some(*world_id),
             _ => None,
         };
-        let codex_mutation = matches!(
-            operation,
-            Operation::StartCodex { .. }
-                | Operation::ResumeCodex { .. }
-                | Operation::SendCodexMessage { .. }
-                | Operation::SteerCodex { .. }
-                | Operation::InterruptCodex { .. }
-        );
         let result = self.execute_with_progress(owner, operation, progress);
         let outcome = match result {
             Ok(response) => Outcome::Ok {
@@ -175,12 +150,10 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 }
             }
             Err(mut error) => {
-                if !codex_mutation
-                    && matches!(
-                        error.code,
-                        ErrorCode::Capacity | ErrorCode::Backend | ErrorCode::Internal
-                    )
-                {
+                if matches!(
+                    error.code,
+                    ErrorCode::Capacity | ErrorCode::Backend | ErrorCode::Internal
+                ) {
                     error.retryable = true;
                 }
                 Outcome::Error { error }
@@ -196,13 +169,11 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         let response_json = match serde_json::to_string(&outcome) {
             Ok(response_json) => response_json,
             Err(error) => {
-                if !codex_mutation {
-                    let _ = self
-                        .store
-                        .abort_api_mutation(owner, request_id, request_hash);
-                }
+                let _ = self
+                    .store
+                    .abort_api_mutation(owner, request_id, request_hash);
                 let mut error = ApiError::new(ErrorCode::Internal, error.to_string());
-                error.retryable = !codex_mutation;
+                error.retryable = true;
                 return ApiResponse::error(error)
                     .with_request_metadata(request_id, server_id, None);
             }
@@ -211,16 +182,12 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             self.store
                 .finish_api_mutation(owner, request_id, request_hash, &response_json)
         {
-            // Codex execution may already have happened. Preserve its reservation even
-            // when storing the response fails; a later retry must not run the turn again.
-            if !codex_mutation {
-                let _ = self
-                    .store
-                    .abort_api_mutation(owner, request_id, request_hash);
-            }
+            let _ = self
+                .store
+                .abort_api_mutation(owner, request_id, request_hash);
             let mut error =
                 ApiError::new(ErrorCode::Internal, format!("store API result: {error}"));
-            error.retryable = !codex_mutation;
+            error.retryable = true;
             return ApiResponse::error(error).with_request_metadata(request_id, server_id, None);
         }
         ApiResponse::from_outcome(outcome).with_request_metadata(

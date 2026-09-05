@@ -1,9 +1,9 @@
-# ADR 0020: Make Codex a required guest integration
+# ADR 0020: Share scoped agent credentials and history
 
 - Status: Amended by [ADR 0082](0082-scope-codex-sessions-to-worlds.md)
 - Date: 2026-08-21
 
-Every golden image installs Codex and `wt-codex-integration`. The server user
+Agent binaries are installed and updated independently through agapi. The server user
 must already be logged in. WT exposes exactly two server-backed resources:
 
 - one `/home/wt/.codex/sessions/<world-id>` directory, mounted read-write in

@@ -19,15 +19,10 @@ impl Request {
     fn api_version(&self) -> u32 {
         match self {
             Self::ListContexts { api_version, .. }
+            | Self::ExecWorld { api_version, .. }
             | Self::ListWorlds { api_version, .. }
             | Self::CreateWorld { api_version, .. }
             | Self::DeleteWorld { api_version, .. }
-            | Self::StartCodex { api_version, .. }
-            | Self::InspectCodex { api_version, .. }
-            | Self::ResumeCodex { api_version, .. }
-            | Self::SendCodexMessage { api_version, .. }
-            | Self::SteerCodex { api_version, .. }
-            | Self::InterruptCodex { api_version, .. }
             | Self::ReadWorldMail { api_version, .. } => *api_version,
         }
     }
@@ -35,15 +30,10 @@ impl Request {
     fn request_id(&self) -> &str {
         match self {
             Self::ListContexts { request_id, .. }
+            | Self::ExecWorld { request_id, .. }
             | Self::ListWorlds { request_id, .. }
             | Self::CreateWorld { request_id, .. }
             | Self::DeleteWorld { request_id, .. }
-            | Self::StartCodex { request_id, .. }
-            | Self::InspectCodex { request_id, .. }
-            | Self::ResumeCodex { request_id, .. }
-            | Self::SendCodexMessage { request_id, .. }
-            | Self::SteerCodex { request_id, .. }
-            | Self::InterruptCodex { request_id, .. }
             | Self::ReadWorldMail { request_id, .. } => request_id,
         }
     }
@@ -54,55 +44,18 @@ impl Request {
             Self::ListWorlds {
                 expected_server_id, ..
             }
+            | Self::ExecWorld {
+                expected_server_id, ..
+            }
             | Self::CreateWorld {
                 expected_server_id, ..
             }
             | Self::DeleteWorld {
                 expected_server_id, ..
             }
-            | Self::StartCodex {
-                expected_server_id, ..
-            }
-            | Self::InspectCodex {
-                expected_server_id, ..
-            }
-            | Self::ResumeCodex {
-                expected_server_id, ..
-            }
-            | Self::SendCodexMessage {
-                expected_server_id, ..
-            }
-            | Self::SteerCodex {
-                expected_server_id, ..
-            }
-            | Self::InterruptCodex {
-                expected_server_id, ..
-            }
             | Self::ReadWorldMail {
                 expected_server_id, ..
             } => expected_server_id.as_deref(),
-        }
-    }
-}
-
-impl From<wt_control_protocol::CodexStatus> for ApiCodexStatus {
-    fn from(status: wt_control_protocol::CodexStatus) -> Self {
-        match status {
-            wt_control_protocol::CodexStatus::Active => Self::Active,
-            wt_control_protocol::CodexStatus::Idle => Self::Idle,
-            wt_control_protocol::CodexStatus::Error => Self::Error,
-        }
-    }
-}
-
-impl From<wt_control_protocol::CodexMessageDelivery> for ApiCodexMessageDelivery {
-    fn from(delivery: wt_control_protocol::CodexMessageDelivery) -> Self {
-        match delivery {
-            wt_control_protocol::CodexMessageDelivery::Steered => Self::Steered,
-            wt_control_protocol::CodexMessageDelivery::Started => Self::Started,
-            wt_control_protocol::CodexMessageDelivery::InterruptRequested => {
-                Self::InterruptRequested
-            }
         }
     }
 }
@@ -275,6 +228,26 @@ fn operation_hash(operation: &Operation) -> String {
 
 fn request_to_operation(request: Request) -> std::result::Result<(String, Operation), String> {
     match request {
+        Request::ExecWorld {
+            context,
+            world_id,
+            executable,
+            args,
+            stdin,
+            ..
+        } => Ok((
+            context,
+            Operation::ExecWorld {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                command: wt_control_protocol::ExecCommand {
+                    executable,
+                    args,
+                    stdin,
+                },
+            },
+        )),
         Request::ListContexts { .. } => Err("list_contexts is a client-local operation".to_owned()),
         Request::ListWorlds { context, .. } => Ok((context, Operation::ListWorlds)),
         Request::CreateWorld {
@@ -312,98 +285,6 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                 .map_err(|_| "invalid world ID".to_owned())?;
             Ok((context, Operation::DeleteWorld { world_id }))
         }
-        Request::StartCodex {
-            context,
-            world_id,
-            message,
-            ..
-        } => Ok((
-            context,
-            Operation::StartCodex {
-                world_id: world_id
-                    .parse()
-                    .map_err(|_| "invalid world ID".to_owned())?,
-                message,
-            },
-        )),
-        Request::InspectCodex {
-            context,
-            world_id,
-            thread_id,
-            ..
-        } => Ok((
-            context,
-            Operation::InspectCodex {
-                world_id: world_id
-                    .parse()
-                    .map_err(|_| "invalid world ID".to_owned())?,
-                thread_id,
-            },
-        )),
-        Request::ResumeCodex {
-            context,
-            world_id,
-            thread_id,
-            ..
-        } => Ok((
-            context,
-            Operation::ResumeCodex {
-                world_id: world_id
-                    .parse()
-                    .map_err(|_| "invalid world ID".to_owned())?,
-                thread_id,
-            },
-        )),
-        Request::SendCodexMessage {
-            context,
-            world_id,
-            thread_id,
-            message,
-            ..
-        } => Ok((
-            context,
-            Operation::SendCodexMessage {
-                world_id: world_id
-                    .parse()
-                    .map_err(|_| "invalid world ID".to_owned())?,
-                thread_id,
-                message,
-            },
-        )),
-        Request::SteerCodex {
-            context,
-            world_id,
-            thread_id,
-            turn_id,
-            message,
-            ..
-        } => Ok((
-            context,
-            Operation::SteerCodex {
-                world_id: world_id
-                    .parse()
-                    .map_err(|_| "invalid world ID".to_owned())?,
-                thread_id,
-                turn_id,
-                message,
-            },
-        )),
-        Request::InterruptCodex {
-            context,
-            world_id,
-            thread_id,
-            turn_id,
-            ..
-        } => Ok((
-            context,
-            Operation::InterruptCodex {
-                world_id: world_id
-                    .parse()
-                    .map_err(|_| "invalid world ID".to_owned())?,
-                thread_id,
-                turn_id,
-            },
-        )),
         Request::ReadWorldMail {
             context,
             world_id,
@@ -432,7 +313,7 @@ fn call(
 ) -> Reply {
     let api_request = if matches!(
         &operation,
-        Operation::ListWorlds | Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
+        Operation::ListWorlds | Operation::ListWorldMail { .. } | Operation::ExecWorld { .. }
     ) {
         ApiRequest {
             protocol_version: wt_control_protocol::PROTOCOL_VERSION,
@@ -475,6 +356,13 @@ fn call(
         expires_at_unix_ms: response.expires_at_unix_ms,
         outcome: match response.outcome {
             Outcome::Ok { response } => match *response {
+                Response::WorldExecuted { output } => ReplyOutcome::Ok {
+                    result: ApiResult::ExecWorld {
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        exit_status: output.exit_status,
+                    },
+                },
                 Response::Worlds { worlds, .. } => ReplyOutcome::Ok {
                     result: ApiResult::ListWorlds {
                         worlds: worlds.into_iter().map(Into::into).collect(),
@@ -488,49 +376,6 @@ fn call(
                 Response::WorldDeleted { world_id } => ReplyOutcome::Ok {
                     result: ApiResult::DeleteWorld {
                         world_id: world_id.to_string(),
-                    },
-                },
-                Response::CodexStarted {
-                    thread_id,
-                    turn_id,
-                    pane_id,
-                    window_name,
-                } => ReplyOutcome::Ok {
-                    result: ApiResult::StartCodex {
-                        thread_id,
-                        turn_id,
-                        pane_id,
-                        window_name,
-                    },
-                },
-                Response::CodexInspection {
-                    thread_id,
-                    status,
-                    active_turn_id,
-                    pane_id,
-                    window_name,
-                    screen,
-                    observed_at_unix_ms,
-                } => ReplyOutcome::Ok {
-                    result: ApiResult::InspectCodex {
-                        thread_id,
-                        status: status.into(),
-                        active_turn_id,
-                        pane_id,
-                        window_name,
-                        screen,
-                        observed_at_unix_ms,
-                    },
-                },
-                Response::CodexMessageSent {
-                    thread_id,
-                    turn_id,
-                    delivery,
-                } => ReplyOutcome::Ok {
-                    result: ApiResult::SendCodexMessage {
-                        thread_id,
-                        turn_id,
-                        delivery: delivery.into(),
                     },
                 },
                 Response::WorldMail {

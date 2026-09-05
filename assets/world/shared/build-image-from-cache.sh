@@ -23,7 +23,6 @@ phase "installing terminal tools"
 /bin/sh /var/tmp/wt-install-terminal.sh
 
 phase "installing Codex"
-/bin/sh /var/tmp/wt-install-codex.sh
 
 phase "installing Diffo"
 /bin/sh /var/tmp/wt-install-diffo.sh

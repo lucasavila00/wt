@@ -28,25 +28,16 @@ pub(super) enum Request {
         request_id: String,
         world_id: String,
     },
-    #[serde(rename = "inspect_codex")]
-    InspectCodex {
+    #[serde(rename = "exec_world")]
+    ExecWorld {
         api_version: u32,
+        args: Vec<String>,
         context: String,
+        executable: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expected_server_id: Option<String>,
         request_id: String,
-        thread_id: String,
-        world_id: String,
-    },
-    #[serde(rename = "interrupt_codex")]
-    InterruptCodex {
-        api_version: u32,
-        context: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        expected_server_id: Option<String>,
-        request_id: String,
-        thread_id: String,
-        turn_id: String,
+        stdin: String,
         world_id: String,
     },
     #[serde(rename = "list_contexts")]
@@ -71,49 +62,6 @@ pub(super) enum Request {
         expected_server_id: Option<String>,
         limit: u32,
         request_id: String,
-        world_id: String,
-    },
-    #[serde(rename = "resume_codex")]
-    ResumeCodex {
-        api_version: u32,
-        context: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        expected_server_id: Option<String>,
-        request_id: String,
-        thread_id: String,
-        world_id: String,
-    },
-    #[serde(rename = "send_codex_message")]
-    SendCodexMessage {
-        api_version: u32,
-        context: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        expected_server_id: Option<String>,
-        message: String,
-        request_id: String,
-        thread_id: String,
-        world_id: String,
-    },
-    #[serde(rename = "start_codex")]
-    StartCodex {
-        api_version: u32,
-        context: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        expected_server_id: Option<String>,
-        message: String,
-        request_id: String,
-        world_id: String,
-    },
-    #[serde(rename = "steer_codex")]
-    SteerCodex {
-        api_version: u32,
-        context: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        expected_server_id: Option<String>,
-        message: String,
-        request_id: String,
-        thread_id: String,
-        turn_id: String,
         world_id: String,
     },
 }
@@ -153,18 +101,10 @@ pub(super) enum ApiResult {
     DeleteWorld {
         world_id: String,
     },
-    InspectCodex {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        active_turn_id: Option<String>,
-        observed_at_unix_ms: i64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pane_id: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        screen: Option<String>,
-        status: ApiCodexStatus,
-        thread_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        window_name: Option<String>,
+    ExecWorld {
+        exit_status: i64,
+        stderr: String,
+        stdout: String,
     },
     ListContexts {
         contexts: Vec<String>,
@@ -175,19 +115,6 @@ pub(super) enum ApiResult {
     ReadWorldMail {
         high_water_message_id: u64,
         messages: Vec<ApiWorldMail>,
-    },
-    SendCodexMessage {
-        delivery: ApiCodexMessageDelivery,
-        thread_id: String,
-        turn_id: String,
-    },
-    StartCodex {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pane_id: Option<String>,
-        thread_id: String,
-        turn_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        window_name: Option<String>,
     },
 }
 
@@ -207,22 +134,6 @@ pub(super) enum ApiMailKind {
     Completed,
     Failed,
     Message,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum ApiCodexStatus {
-    Active,
-    Error,
-    Idle,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum ApiCodexMessageDelivery {
-    InterruptRequested,
-    Started,
-    Steered,
 }
 
 #[derive(Debug, Serialize)]

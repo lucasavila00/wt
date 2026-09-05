@@ -26,7 +26,6 @@ set -eu
 request=$(cat)
 case "$request" in
   *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"operation":"list_world_mail"'*) ;;
-  *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"operation":"inspect_codex"'*) ;;
   *'"request_id":"11111111-1111-4111-8111-111111111111"'*'"request_hash":"'*) ;;
   *) exit 3 ;;
 esac
@@ -37,37 +36,28 @@ case "$request" in
 esac
 case "$request" in
   *'"name":"metadata"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"33333333-3333-4333-8333-333333333333","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"conflict","message":"ignored"}}'
+    printf '%s\n' '{"protocol_version":21,"request_id":"33333333-3333-4333-8333-333333333333","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"conflict","message":"ignored"}}'
     ;;
   *'"name":"capacity"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
+    printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
     ;;
   *'"name":"duplicate"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"error","error":{"code":"conflict","message":"world already exists"}}'
+    printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"error","error":{"code":"conflict","message":"world already exists"}}'
     ;;
   *'"operation":"create_world"'*)
-    printf '%s\n' '{"protocol_version":20,"event":"progress","message":"creating disk"}'
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
-    ;;
-  *'"operation":"start_codex"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_started","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123"}}'
-    ;;
-  *'"operation":"inspect_codex"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_inspection","thread_id":"thread-123","status":"active","active_turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123","screen":"Codex is working","observed_at_unix_ms":1800000000000}}'
-    ;;
-  *'"operation":"send_codex_message"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_message_sent","thread_id":"thread-123","turn_id":"turn-789","delivery":"steered"}}'
+    printf '%s\n' '{"protocol_version":21,"event":"progress","message":"creating disk"}'
+    printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-0000-0000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"]}}}}'
     ;;
   *'"operation":"list_world_mail"'*)
-    printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"world_mail","messages":[{"id":7,"world_id":"00000000-0000-0000-0000-000000000001","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","message":"done"}],"high_water_id":7}}'
+    printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"world_mail","messages":[{"id":7,"world_id":"00000000-0000-0000-0000-000000000001","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","message":"done"}],"high_water_id":7}}'
     ;;
   *'"operation":"delete_world"'*)
     case "$request" in
       *'"world_id":"00000000-0000-0000-0000-000000000002"'*)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000002"}}'
+        printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000002"}}'
         ;;
       *)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}'
+        printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-0000-0000-000000000001"}}'
         ;;
     esac
     ;;
@@ -139,40 +129,6 @@ fn deletes_a_world_with_the_versioned_json_contract() {
     assert!(output.stderr.is_empty());
     insta::assert_snapshot!(String::from_utf8(output.stdout).unwrap(), @r###"
     {"outcome":"ok","api_version":1,"expires_at_unix_ms":2592000100,"request_id":"11111111-1111-4111-8111-111111111111","result":{"world_id":"00000000-0000-0000-0000-000000000001"},"server_id":"22222222-2222-4222-8222-222222222222"}
-    "###);
-}
-
-#[test]
-fn starts_inspects_and_steers_codex() {
-    let (temp, path) = test_home();
-    let started = call_api(
-        &temp,
-        &path,
-        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"start_codex","world_id":"00000000-0000-0000-0000-000000000001","message":"review this"}"#,
-    );
-    assert!(started.status.success());
-    insta::assert_snapshot!(String::from_utf8(started.stdout).unwrap(), @r###"
-    {"outcome":"ok","api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"pane_id":"%7","thread_id":"thread-123","turn_id":"turn-456","window_name":"codex-thread-123"},"server_id":"22222222-2222-4222-8222-222222222222"}
-    "###);
-
-    let inspected = call_api(
-        &temp,
-        &path,
-        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"inspect_codex","world_id":"00000000-0000-0000-0000-000000000001","thread_id":"thread-123"}"#,
-    );
-    assert!(inspected.status.success());
-    insta::assert_snapshot!(String::from_utf8(inspected.stdout).unwrap(), @r###"
-    {"outcome":"ok","api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"active_turn_id":"turn-456","observed_at_unix_ms":1800000000000,"pane_id":"%7","screen":"Codex is working","status":"active","thread_id":"thread-123","window_name":"codex-thread-123"},"server_id":"22222222-2222-4222-8222-222222222222"}
-    "###);
-
-    let sent = call_api(
-        &temp,
-        &path,
-        r#"{"api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","context":"ars","operation":"send_codex_message","world_id":"00000000-0000-0000-0000-000000000001","thread_id":"thread-123","message":"continue"}"#,
-    );
-    assert!(sent.status.success());
-    insta::assert_snapshot!(String::from_utf8(sent.stdout).unwrap(), @r###"
-    {"outcome":"ok","api_version":1,"request_id":"11111111-1111-4111-8111-111111111111","result":{"delivery":"steered","thread_id":"thread-123","turn_id":"turn-789"},"server_id":"22222222-2222-4222-8222-222222222222"}
     "###);
 }
 

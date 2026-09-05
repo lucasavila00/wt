@@ -8,7 +8,7 @@ description = "Local wt workstation CLI (binary name: wt)"
 
 [features]
 default = []
-guest = ["dep:wt-agent-tool-gateway", "dep:wt-codex-integration"]
+guest = ["dep:wt-agent-tool-gateway"]
 
 [[bin]]
 name = "wt"
@@ -22,7 +22,6 @@ required-features = ["guest"]
 [dependencies]
 wt-control-protocol = { workspace = true }
 wt-agent-tool-gateway = { workspace = true, optional = true }
-wt-codex-integration = { path = "../codex-integration", optional = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }

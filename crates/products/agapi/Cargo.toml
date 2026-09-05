@@ -1,0 +1,19 @@
+[package]
+name = "agapi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["env"] }
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tungstenite = "0.28.0"
+uuid.workspace = true
+signal-hook.workspace = true
+
+[dev-dependencies]
+insta.workspace = true

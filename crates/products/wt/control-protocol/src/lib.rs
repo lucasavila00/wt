@@ -2,8 +2,8 @@
 
 mod activity;
 mod capacity;
-mod codex;
 mod create;
+mod exec;
 mod mail;
 mod pane;
 #[cfg(test)]
@@ -15,8 +15,8 @@ pub use activity::{
     GitActivity, GitActivityKind, GitActivityQuery, WtToolsActivity, WtToolsActivityQuery,
 };
 pub use capacity::{Capacity, CapacityResource};
-pub use codex::{CodexMessageDelivery, CodexStatus};
 pub use create::{validate_create_world_resources, CreateWorld};
+pub use exec::{ExecCommand, ExecOutput};
 pub use mail::{MailKind, WorldMail, MAX_MAIL_TEXT_BYTES, MAX_WORLD_MAIL_PAGE_SIZE};
 pub use pane::{
     PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
@@ -31,7 +31,7 @@ use uuid::Uuid;
 pub use validation::{InvalidWorldName, WorldName};
 pub use wt_world::WorldId;
 
-pub const PROTOCOL_VERSION: u32 = 20;
+pub const PROTOCOL_VERSION: u32 = 21;
 pub const BUILD_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GIT_COMMIT_SHA: &str = env!("WT_GIT_COMMIT_SHA");
 pub const BUILD_DESCRIPTION: &str = concat!(
@@ -127,6 +127,7 @@ impl ApiRequest {
 #[serde(tag = "operation", rename_all = "snake_case")]
 #[rustfmt::skip]
 pub enum Operation {
+    ExecWorld { world_id: WorldId, command: ExecCommand },
     ServerInfo,
     CreateWorld(CreateWorld),
     ListWorlds,
@@ -135,12 +136,6 @@ pub enum Operation {
     StartWorld { world_id: WorldId },
     StopWorld { world_id: WorldId },
     DeleteWorld { world_id: WorldId },
-    StartCodex { world_id: WorldId, message: String },
-    InspectCodex { world_id: WorldId, thread_id: String },
-    ResumeCodex { world_id: WorldId, thread_id: String },
-    SendCodexMessage { world_id: WorldId, thread_id: String, message: String },
-    SteerCodex { world_id: WorldId, thread_id: String, turn_id: String, message: String },
-    InterruptCodex { world_id: WorldId, thread_id: String, turn_id: String },
     ListAgentToolReports,
     ClearAgentToolReports,
     ListWorldMail { world_id: WorldId, after_id: u64, limit: u32 },
@@ -218,6 +213,9 @@ pub enum Outcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
 pub enum Response {
+    WorldExecuted {
+        output: ExecOutput,
+    },
     ServerInfo {
         test_server: bool,
         build: BuildIdentity,
@@ -243,26 +241,6 @@ pub enum Response {
     WorldMail {
         messages: Vec<WorldMail>,
         high_water_id: u64,
-    },
-    CodexStarted {
-        thread_id: String,
-        turn_id: String,
-        pane_id: Option<String>,
-        window_name: Option<String>,
-    },
-    CodexInspection {
-        thread_id: String,
-        status: CodexStatus,
-        active_turn_id: Option<String>,
-        pane_id: Option<String>,
-        window_name: Option<String>,
-        screen: Option<String>,
-        observed_at_unix_ms: i64,
-    },
-    CodexMessageSent {
-        thread_id: String,
-        turn_id: String,
-        delivery: CodexMessageDelivery,
     },
     PaneObservations {
         panes: Vec<PaneObservation>,
@@ -560,7 +538,7 @@ mod tests {
         }));
         insta::assert_snapshot!(serde_json::to_string_pretty(&response).unwrap(), @r###"
         {
-          "protocol_version": 20,
+          "protocol_version": 21,
           "outcome": "error",
           "error": {
             "code": "capacity",
@@ -596,7 +574,7 @@ mod tests {
           "memory_mib": 4096,
           "name": "build-world",
           "operation": "create_world",
-          "protocol_version": 20,
+          "protocol_version": 21,
           "vcpus": 2
         }
         "###);
@@ -652,7 +630,7 @@ mod tests {
     fn progress_is_a_line_delimited_wire_event() {
         insta::assert_snapshot!(serde_json::to_string_pretty(&ApiProgress::new("Waiting for the guest transport...".into())).unwrap(), @r###"
         {
-          "protocol_version": 20,
+          "protocol_version": 21,
           "event": "progress",
           "message": "Waiting for the guest transport..."
         }
@@ -672,11 +650,11 @@ mod tests {
         insta::assert_snapshot!(serde_json::to_string_pretty(&(request, response)).unwrap(), @r###"
         [
           {
-            "protocol_version": 20,
+            "protocol_version": 21,
             "operation": "server_info"
           },
           {
-            "protocol_version": 20,
+            "protocol_version": 21,
             "outcome": "ok",
             "response": {
               "response": "server_info",

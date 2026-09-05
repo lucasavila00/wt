@@ -7,6 +7,12 @@ defmodule WtApi do
 
   @type error :: TransportError.t() | ProtocolError.t() | ServerError.t()
 
+  @doc "Execute a bounded UTF-8 command once, without shell interpolation or replay."
+  def exec_world(request), do: exec_world(Client.new(), request)
+
+  def exec_world(client, %Request.ExecWorld{} = request),
+    do: call(client, request, Result.ExecWorld, fn _result -> :ok end)
+
   @doc "List configured context names without contacting a server."
   def list_contexts(request), do: list_contexts(Client.new(), request)
 
@@ -44,82 +50,6 @@ defmodule WtApi do
     )
   end
 
-  @spec start_codex(Request.StartCodex.t()) ::
-          {:ok, Success.t(Result.StartCodex.t())} | {:error, error()}
-  def start_codex(request), do: start_codex(Client.new(), request)
-
-  @spec start_codex(Client.t(), Request.StartCodex.t()) ::
-          {:ok, Success.t(Result.StartCodex.t())} | {:error, error()}
-  def start_codex(client, %Request.StartCodex{} = request) do
-    call(client, request, Result.StartCodex, fn _result -> :ok end)
-  end
-
-  @spec inspect_codex(Request.InspectCodex.t()) ::
-          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
-  def inspect_codex(request), do: inspect_codex(Client.new(), request)
-
-  @spec inspect_codex(Client.t(), Request.InspectCodex.t()) ::
-          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
-  def inspect_codex(client, %Request.InspectCodex{} = request) do
-    call(
-      client,
-      request,
-      Result.InspectCodex,
-      &equal_identity(&1.thread_id, request.thread_id, "thread ID")
-    )
-  end
-
-  @doc "Resume a persisted thread and restore its visible window without starting a turn."
-  @spec resume_codex(Request.ResumeCodex.t()) ::
-          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
-  def resume_codex(request), do: resume_codex(Client.new(), request)
-
-  @spec resume_codex(Client.t(), Request.ResumeCodex.t()) ::
-          {:ok, Success.t(Result.InspectCodex.t())} | {:error, error()}
-  def resume_codex(client, %Request.ResumeCodex{} = request) do
-    call(
-      client,
-      request,
-      Result.InspectCodex,
-      &equal_identity(&1.thread_id, request.thread_id, "thread ID")
-    )
-  end
-
-  @spec send_codex_message(Request.SendCodexMessage.t()) ::
-          {:ok, Success.t(Result.SendCodexMessage.t())} | {:error, error()}
-  def send_codex_message(request), do: send_codex_message(Client.new(), request)
-
-  @spec send_codex_message(Client.t(), Request.SendCodexMessage.t()) ::
-          {:ok, Success.t(Result.SendCodexMessage.t())} | {:error, error()}
-  def send_codex_message(client, %Request.SendCodexMessage{} = request) do
-    call(
-      client,
-      request,
-      Result.SendCodexMessage,
-      &equal_identity(&1.thread_id, request.thread_id, "thread ID")
-    )
-  end
-
-  def steer_codex(request), do: steer_codex(Client.new(), request)
-
-  def steer_codex(client, %Request.SteerCodex{} = request) do
-    call(client, request, Result.SendCodexMessage, fn result ->
-      with :ok <- equal_identity(result.thread_id, request.thread_id, "thread ID"),
-           :ok <- equal_identity(result.turn_id, request.turn_id, "turn ID"),
-           do: :ok
-    end)
-  end
-
-  def interrupt_codex(request), do: interrupt_codex(Client.new(), request)
-
-  def interrupt_codex(client, %Request.InterruptCodex{} = request) do
-    call(client, request, Result.SendCodexMessage, fn result ->
-      with :ok <- equal_identity(result.thread_id, request.thread_id, "thread ID"),
-           :ok <- equal_identity(result.turn_id, request.turn_id, "turn ID"),
-           do: :ok
-    end)
-  end
-
   @spec read_world_mail(Request.ReadWorldMail.t()) ::
           {:ok, Success.t(Result.ReadWorldMail.t())} | {:error, error()}
   def read_world_mail(request), do: read_world_mail(Client.new(), request)
@@ -155,6 +85,9 @@ defmodule WtApi do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
   end
+
+  defp execute(%Client{transport: transport}, input) when is_function(transport, 1),
+    do: transport.(input)
 
   defp execute(%Client{} = client, input) do
     try do

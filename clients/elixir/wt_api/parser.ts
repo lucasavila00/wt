@@ -2,25 +2,18 @@ import parse from "./generated/parser.js";
 import type * as Api from "./api.js";
 
 export const Codecs = parse.buildParsers<{
+  ExecWorldRequest: Api.ExecWorldRequest;
+  ExecWorldResult: Api.ExecWorldResult;
   Request: Api.Request;
   Response: Api.Response;
   CreateWorldRequest: Api.CreateWorldRequest;
   DeleteWorldRequest: Api.DeleteWorldRequest;
-  StartCodexRequest: Api.StartCodexRequest;
-  InspectCodexRequest: Api.InspectCodexRequest;
-  ResumeCodexRequest: Api.ResumeCodexRequest;
-  SendCodexMessageRequest: Api.SendCodexMessageRequest;
-  SteerCodexRequest: Api.SteerCodexRequest;
-  InterruptCodexRequest: Api.InterruptCodexRequest;
   ReadWorldMailRequest: Api.ReadWorldMailRequest;
   SshAccess: Api.SshAccess;
   World: Api.World;
   WorldMail: Api.WorldMail;
   CreateWorldResult: Api.CreateWorldResult;
   DeleteWorldResult: Api.DeleteWorldResult;
-  StartCodexResult: Api.StartCodexResult;
-  InspectCodexResult: Api.InspectCodexResult;
-  SendCodexMessageResult: Api.SendCodexMessageResult;
   ReadWorldMailResult: Api.ReadWorldMailResult;
   CapacityDetails: Api.CapacityDetails;
   Error: Api.Error;

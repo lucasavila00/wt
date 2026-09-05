@@ -11,7 +11,7 @@ scripts/install-server --config ./server.toml
 
 The installer prepares libvirt, capacity state, the agent tool gateway, and a
 verified guest golden image. Every image contains Git, OpenSSH, QEMU
-guest support, Byobu, tmux, Codex, Diffo, WT's guest helpers, current Rust/Cargo,
+guest support, Byobu, tmux, Diffo, WT's guest helpers, current Rust/Cargo,
 Go, Python/uv, Node.js/nvm, build tools, CLI utilities including ShellCheck,
 and Docker with Compose.
 
@@ -33,10 +33,9 @@ Change that source and rebuild the image instead of editing a world. Existing
 world overlays retain their current backing image, so they do not receive a
 changed default.
 
-Each golden image also owns `/home/wt/.codex/config.toml`. Its `SessionStart`
-hook injects the WT world prompt, which explains the disposable guest, normal
-Git workflow, the shared `wt/` branch namespace, and `wtg tools` provider
-operations. Change the image recipe and rebuild rather than editing a world.
+Agent binaries and user configuration are not owned by the golden image.
+Install and update the standalone [agapi runtime](../../crates/products/agapi/README.md)
+inside existing worlds. Supervise agapi serve independently of WT.
 
 Codex authentication is shared read-only. Each world receives a read-write
 mount of only its own server-backed sessions directory; user configuration,

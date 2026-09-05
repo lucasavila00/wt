@@ -6,6 +6,24 @@ export type UInt16 = NumberFormat<"UInt16">;
 export type UInt32 = NumberFormat<"UInt32">;
 export type UInt64 = NumberFormat<"UInt64">;
 
+export type ExecWorldRequest = {
+  api_version: 1;
+  request_id: Uuid;
+  expected_server_id?: Uuid;
+  context: string;
+  operation: "exec_world";
+  world_id: Uuid;
+  executable: string;
+  args: string[];
+  stdin: string;
+};
+
+export type ExecWorldResult = {
+  stdout: string;
+  stderr: string;
+  exit_status: Int64;
+};
+
 export type ListContextsRequest = {
   api_version: 1;
   request_id: Uuid;
@@ -43,47 +61,6 @@ export type DeleteWorldRequest = {
   world_id: Uuid;
 };
 
-export type StartCodexRequest = {
-  api_version: 1;
-  request_id: Uuid;
-  expected_server_id?: Uuid;
-  context: string;
-  operation: "start_codex";
-  world_id: Uuid;
-  message: string;
-};
-
-export type InspectCodexRequest = {
-  api_version: 1;
-  request_id: Uuid;
-  expected_server_id?: Uuid;
-  context: string;
-  operation: "inspect_codex";
-  world_id: Uuid;
-  thread_id: string;
-};
-
-export type ResumeCodexRequest = {
-  api_version: 1;
-  request_id: Uuid;
-  expected_server_id?: Uuid;
-  context: string;
-  operation: "resume_codex";
-  world_id: Uuid;
-  thread_id: string;
-};
-
-export type SendCodexMessageRequest = {
-  api_version: 1;
-  request_id: Uuid;
-  expected_server_id?: Uuid;
-  context: string;
-  operation: "send_codex_message";
-  world_id: Uuid;
-  thread_id: string;
-  message: string;
-};
-
 export type ReadWorldMailRequest = {
   api_version: 1;
   request_id: Uuid;
@@ -95,40 +72,12 @@ export type ReadWorldMailRequest = {
   limit: UInt32;
 };
 
-export type SteerCodexRequest = {
-  api_version: 1;
-  request_id: Uuid;
-  expected_server_id?: Uuid;
-  context: string;
-  operation: "steer_codex";
-  world_id: Uuid;
-  thread_id: string;
-  turn_id: string;
-  message: string;
-};
-
-export type InterruptCodexRequest = {
-  api_version: 1;
-  request_id: Uuid;
-  expected_server_id?: Uuid;
-  context: string;
-  operation: "interrupt_codex";
-  world_id: Uuid;
-  thread_id: string;
-  turn_id: string;
-};
-
 export type Request =
+  | ExecWorldRequest
   | ListContextsRequest
   | ListWorldsRequest
   | CreateWorldRequest
   | DeleteWorldRequest
-  | StartCodexRequest
-  | InspectCodexRequest
-  | ResumeCodexRequest
-  | SendCodexMessageRequest
-  | SteerCodexRequest
-  | InterruptCodexRequest
   | ReadWorldMailRequest;
 
 export type SshAccess = {
@@ -166,42 +115,17 @@ export type ListContextsResult = { contexts: string[] };
 export type ListWorldsResult = { worlds: World[] };
 export type DeleteWorldResult = { world_id: Uuid };
 
-export type StartCodexResult = {
-  thread_id: string;
-  turn_id: string;
-  pane_id?: string;
-  window_name?: string;
-};
-
-export type InspectCodexResult = {
-  thread_id: string;
-  status: "active" | "idle" | "error";
-  active_turn_id?: string;
-  pane_id?: string;
-  window_name?: string;
-  screen?: string;
-  observed_at_unix_ms: Int64;
-};
-
-export type SendCodexMessageResult = {
-  thread_id: string;
-  turn_id: string;
-  delivery: "steered" | "started" | "interrupt_requested";
-};
-
 export type ReadWorldMailResult = {
   messages: WorldMail[];
   high_water_message_id: UInt64;
 };
 
 export type Result =
+  | ExecWorldResult
   | ListContextsResult
   | ListWorldsResult
   | CreateWorldResult
   | DeleteWorldResult
-  | StartCodexResult
-  | InspectCodexResult
-  | SendCodexMessageResult
   | ReadWorldMailResult;
 
 export type CapacityDetails = {

@@ -1,25 +1,11 @@
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket};
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(30);
-
-pub(crate) fn state_dir() -> Result<PathBuf> {
-    Ok(
-        PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?)
-            .join(".local/state/wt/codex"),
-    )
-}
-
-pub(crate) fn endpoint() -> Result<String> {
-    Ok(format!(
-        "unix://{}",
-        state_dir()?.join("app-server.sock").display()
-    ))
-}
 
 pub(crate) trait Rpc {
     fn call(&mut self, method: &str, params: Value) -> Result<Value>;
@@ -31,9 +17,9 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    pub(crate) fn open() -> Result<Self> {
-        let stream = UnixStream::connect(state_dir()?.join("app-server.sock"))
-            .context("connect to wt-codex-app-server.service")?;
+    pub(crate) fn open(state: &Path) -> Result<Self> {
+        let stream =
+            UnixStream::connect(state.join("codex.sock")).context("connect to agapi serve")?;
         stream.set_read_timeout(Some(RPC_TIMEOUT))?;
         stream.set_write_timeout(Some(RPC_TIMEOUT))?;
         let (socket, _) = tungstenite::client("ws://localhost/", stream)
@@ -42,7 +28,7 @@ impl Connection {
         connection.call(
             "initialize",
             json!({ "capabilities": { "experimentalApi": true }, "clientInfo": {
-                "name": "wt", "title": "WT", "version": env!("CARGO_PKG_VERSION")
+                "name": "agapi", "title": "agapi", "version": env!("CARGO_PKG_VERSION")
             }}),
         )?;
         connection.write(&json!({ "method": "initialized", "params": {} }))?;
@@ -89,7 +75,7 @@ impl Rpc for Connection {
                 if let Some(request_id) = message.get("id") {
                     // Never mistake a server-initiated request for our RPC response.
                     self.write(&json!({ "id": request_id, "error": {
-                        "code": -32601, "message": "WT does not support interactive client requests"
+                        "code": -32601, "message": "agapi does not support interactive client requests"
                     }}))?;
                 }
                 // Notifications are hints; the recovery worker reconciles thread/read.

@@ -5,7 +5,8 @@ consumers from at least two products.
 
 ```text
 crates/products/wt/{client,control-protocol,server,guest}
-crates/products/wt/{codex-integration,server-installer}
+crates/products/wt/server-installer
+crates/products/agapi
 crates/products/agent-tools/{gateway,tools}
 crates/products/git-proxy/{service,installer}
 crates/shared/{libvirt-kvm,workload-registry,git-smart-protocol,installer-support}

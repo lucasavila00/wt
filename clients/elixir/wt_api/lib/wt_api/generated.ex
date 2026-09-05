@@ -74,6 +74,72 @@ defmodule WtApi.Generated.Decoder do
   defp decode_value(_value, _type), do: {:error, "unexpected type"}
 end
 
+defmodule WtApi.Request.ExecWorld do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:args, :context, :executable, :request_id, :stdin, :world_id]
+  defstruct api_version: 1,
+            args: nil,
+            context: nil,
+            executable: nil,
+            expected_server_id: nil,
+            operation: "exec_world",
+            request_id: nil,
+            stdin: nil,
+            world_id: nil
+
+  @type t :: %__MODULE__{
+          api_version: number(),
+          args: [String.t()],
+          context: String.t(),
+          executable: String.t(),
+          expected_server_id: String.t() | nil,
+          operation: String.t(),
+          request_id: String.t(),
+          stdin: String.t(),
+          world_id: String.t()
+        }
+
+  @schema %{
+    api_version: {:required, {:const, 1}},
+    args: {:required, {:list, :string}},
+    context: {:required, :string},
+    executable: {:required, :string},
+    expected_server_id: {:optional, :uuid},
+    operation: {:required, {:const, "exec_world"}},
+    request_id: {:required, :uuid},
+    stdin: {:required, :string},
+    world_id: {:required, :uuid}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
+defmodule WtApi.Result.ExecWorld do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:exit_status, :stderr, :stdout]
+  defstruct exit_status: nil, stderr: nil, stdout: nil
+
+  @type t :: %__MODULE__{
+          exit_status: integer(),
+          stderr: String.t(),
+          stdout: String.t()
+        }
+
+  @schema %{
+    exit_status: {:required, :integer},
+    stderr: {:required, :string},
+    stdout: {:required, :string}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
 defmodule WtApi.Request.ListContexts do
   @moduledoc false
   alias WtApi.Generated.Decoder
@@ -251,240 +317,6 @@ defmodule WtApi.Request.DeleteWorld do
     expected_server_id: {:optional, :uuid},
     operation: {:required, {:const, "delete_world"}},
     request_id: {:required, :uuid},
-    world_id: {:required, :uuid}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Request.StartCodex do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:context, :message, :request_id, :world_id]
-  defstruct api_version: 1,
-            context: nil,
-            expected_server_id: nil,
-            message: nil,
-            operation: "start_codex",
-            request_id: nil,
-            world_id: nil
-
-  @type t :: %__MODULE__{
-          api_version: number(),
-          context: String.t(),
-          expected_server_id: String.t() | nil,
-          message: String.t(),
-          operation: String.t(),
-          request_id: String.t(),
-          world_id: String.t()
-        }
-
-  @schema %{
-    api_version: {:required, {:const, 1}},
-    context: {:required, :string},
-    expected_server_id: {:optional, :uuid},
-    message: {:required, :string},
-    operation: {:required, {:const, "start_codex"}},
-    request_id: {:required, :uuid},
-    world_id: {:required, :uuid}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Request.InspectCodex do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:context, :request_id, :thread_id, :world_id]
-  defstruct api_version: 1,
-            context: nil,
-            expected_server_id: nil,
-            operation: "inspect_codex",
-            request_id: nil,
-            thread_id: nil,
-            world_id: nil
-
-  @type t :: %__MODULE__{
-          api_version: number(),
-          context: String.t(),
-          expected_server_id: String.t() | nil,
-          operation: String.t(),
-          request_id: String.t(),
-          thread_id: String.t(),
-          world_id: String.t()
-        }
-
-  @schema %{
-    api_version: {:required, {:const, 1}},
-    context: {:required, :string},
-    expected_server_id: {:optional, :uuid},
-    operation: {:required, {:const, "inspect_codex"}},
-    request_id: {:required, :uuid},
-    thread_id: {:required, :string},
-    world_id: {:required, :uuid}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Request.ResumeCodex do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:context, :request_id, :thread_id, :world_id]
-  defstruct api_version: 1,
-            context: nil,
-            expected_server_id: nil,
-            operation: "resume_codex",
-            request_id: nil,
-            thread_id: nil,
-            world_id: nil
-
-  @type t :: %__MODULE__{
-          api_version: number(),
-          context: String.t(),
-          expected_server_id: String.t() | nil,
-          operation: String.t(),
-          request_id: String.t(),
-          thread_id: String.t(),
-          world_id: String.t()
-        }
-
-  @schema %{
-    api_version: {:required, {:const, 1}},
-    context: {:required, :string},
-    expected_server_id: {:optional, :uuid},
-    operation: {:required, {:const, "resume_codex"}},
-    request_id: {:required, :uuid},
-    thread_id: {:required, :string},
-    world_id: {:required, :uuid}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Request.SendCodexMessage do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:context, :message, :request_id, :thread_id, :world_id]
-  defstruct api_version: 1,
-            context: nil,
-            expected_server_id: nil,
-            message: nil,
-            operation: "send_codex_message",
-            request_id: nil,
-            thread_id: nil,
-            world_id: nil
-
-  @type t :: %__MODULE__{
-          api_version: number(),
-          context: String.t(),
-          expected_server_id: String.t() | nil,
-          message: String.t(),
-          operation: String.t(),
-          request_id: String.t(),
-          thread_id: String.t(),
-          world_id: String.t()
-        }
-
-  @schema %{
-    api_version: {:required, {:const, 1}},
-    context: {:required, :string},
-    expected_server_id: {:optional, :uuid},
-    message: {:required, :string},
-    operation: {:required, {:const, "send_codex_message"}},
-    request_id: {:required, :uuid},
-    thread_id: {:required, :string},
-    world_id: {:required, :uuid}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Request.SteerCodex do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:context, :message, :request_id, :thread_id, :turn_id, :world_id]
-  defstruct api_version: 1,
-            context: nil,
-            expected_server_id: nil,
-            message: nil,
-            operation: "steer_codex",
-            request_id: nil,
-            thread_id: nil,
-            turn_id: nil,
-            world_id: nil
-
-  @type t :: %__MODULE__{
-          api_version: number(),
-          context: String.t(),
-          expected_server_id: String.t() | nil,
-          message: String.t(),
-          operation: String.t(),
-          request_id: String.t(),
-          thread_id: String.t(),
-          turn_id: String.t(),
-          world_id: String.t()
-        }
-
-  @schema %{
-    api_version: {:required, {:const, 1}},
-    context: {:required, :string},
-    expected_server_id: {:optional, :uuid},
-    message: {:required, :string},
-    operation: {:required, {:const, "steer_codex"}},
-    request_id: {:required, :uuid},
-    thread_id: {:required, :string},
-    turn_id: {:required, :string},
-    world_id: {:required, :uuid}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Request.InterruptCodex do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:context, :request_id, :thread_id, :turn_id, :world_id]
-  defstruct api_version: 1,
-            context: nil,
-            expected_server_id: nil,
-            operation: "interrupt_codex",
-            request_id: nil,
-            thread_id: nil,
-            turn_id: nil,
-            world_id: nil
-
-  @type t :: %__MODULE__{
-          api_version: number(),
-          context: String.t(),
-          expected_server_id: String.t() | nil,
-          operation: String.t(),
-          request_id: String.t(),
-          thread_id: String.t(),
-          turn_id: String.t(),
-          world_id: String.t()
-        }
-
-  @schema %{
-    api_version: {:required, {:const, 1}},
-    context: {:required, :string},
-    expected_server_id: {:optional, :uuid},
-    operation: {:required, {:const, "interrupt_codex"}},
-    request_id: {:required, :uuid},
-    thread_id: {:required, :string},
-    turn_id: {:required, :string},
     world_id: {:required, :uuid}
   }
 
@@ -672,91 +504,6 @@ defmodule WtApi.Result.DeleteWorld do
 
   @schema %{
     world_id: {:required, :uuid}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Result.StartCodex do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:thread_id, :turn_id]
-  defstruct pane_id: nil, thread_id: nil, turn_id: nil, window_name: nil
-
-  @type t :: %__MODULE__{
-          pane_id: String.t() | nil,
-          thread_id: String.t(),
-          turn_id: String.t(),
-          window_name: String.t() | nil
-        }
-
-  @schema %{
-    pane_id: {:optional, :string},
-    thread_id: {:required, :string},
-    turn_id: {:required, :string},
-    window_name: {:optional, :string}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Result.InspectCodex do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:observed_at_unix_ms, :status, :thread_id]
-  defstruct active_turn_id: nil,
-            observed_at_unix_ms: nil,
-            pane_id: nil,
-            screen: nil,
-            status: nil,
-            thread_id: nil,
-            window_name: nil
-
-  @type t :: %__MODULE__{
-          active_turn_id: String.t() | nil,
-          observed_at_unix_ms: integer(),
-          pane_id: String.t() | nil,
-          screen: String.t() | nil,
-          status: String.t(),
-          thread_id: String.t(),
-          window_name: String.t() | nil
-        }
-
-  @schema %{
-    active_turn_id: {:optional, :string},
-    observed_at_unix_ms: {:required, :integer},
-    pane_id: {:optional, :string},
-    screen: {:optional, :string},
-    status: {:required, {:enum, ["active", "error", "idle"]}},
-    thread_id: {:required, :string},
-    window_name: {:optional, :string}
-  }
-
-  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
-  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
-end
-
-defmodule WtApi.Result.SendCodexMessage do
-  @moduledoc false
-  alias WtApi.Generated.Decoder
-
-  @enforce_keys [:delivery, :thread_id, :turn_id]
-  defstruct delivery: nil, thread_id: nil, turn_id: nil
-
-  @type t :: %__MODULE__{
-          delivery: String.t(),
-          thread_id: String.t(),
-          turn_id: String.t()
-        }
-
-  @schema %{
-    delivery: {:required, {:enum, ["interrupt_requested", "started", "steered"]}},
-    thread_id: {:required, :string},
-    turn_id: {:required, :string}
   }
 
   @spec decode(map()) :: {:ok, t()} | {:error, String.t()}

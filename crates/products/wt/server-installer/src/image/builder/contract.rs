@@ -58,8 +58,8 @@ pub(in crate::image) fn verify_guest_contract(runner: &impl Runner, disk: &Path)
             bail!("finalized image guest binary differs: {guest_path}");
         }
     }
-    for alias in ["codex", "git-remote-wt-agent"] {
-        let path = format!("/usr/local/bin/{alias}");
+    {
+        let path = "/usr/local/bin/git-remote-wt-agent";
         let expected = format!(" {path} -> /usr/local/bin/wtg");
         if !binary_listing
             .lines()
