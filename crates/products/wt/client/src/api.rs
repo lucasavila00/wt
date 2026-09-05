@@ -475,7 +475,7 @@ fn call(
         expires_at_unix_ms: response.expires_at_unix_ms,
         outcome: match response.outcome {
             Outcome::Ok { response } => match *response {
-                Response::Worlds { worlds } => ReplyOutcome::Ok {
+                Response::Worlds { worlds, .. } => ReplyOutcome::Ok {
                     result: ApiResult::ListWorlds {
                         worlds: worlds.into_iter().map(Into::into).collect(),
                     },
