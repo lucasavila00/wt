@@ -158,6 +158,48 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
         &proxy_known_hosts,
     ));
 
+    let refs_before = git_refs(&upstream_repository);
+    let rejected = git_proxy(
+        &checkout,
+        &["push", "origin", "+HEAD~2:main"],
+        &client_key,
+        &proxy_known_hosts,
+    );
+    assert!(!rejected.status.success());
+    insta::assert_snapshot!(
+        "proxy_exact_branch_rewrite",
+        diagnostics(&rejected, root, proxy_port)
+    );
+    let rejected = git_proxy(
+        &checkout,
+        &[
+            "push",
+            "--force-with-lease",
+            "origin",
+            "HEAD^:tasks/fix",
+            "HEAD:tasks/new",
+        ],
+        &client_key,
+        &proxy_known_hosts,
+    );
+    assert!(!rejected.status.success());
+    insta::assert_snapshot!(
+        "proxy_mixed_history_rewrite",
+        diagnostics(&rejected, root, proxy_port)
+    );
+    let rejected = git_proxy(
+        &checkout,
+        &["push", "origin", "--delete", "tasks/fix"],
+        &client_key,
+        &proxy_known_hosts,
+    );
+    assert!(!rejected.status.success());
+    insta::assert_snapshot!(
+        "proxy_branch_deletion",
+        diagnostics(&rejected, root, proxy_port)
+    );
+    assert_eq!(git_refs(&upstream_repository), refs_before);
+
     git(&checkout, &["branch", "tasks/mixed"]);
     git(&checkout, &["branch", "wrong"]);
     let rejected = git_proxy(
@@ -167,7 +209,10 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
         &proxy_known_hosts,
     );
     assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("outside the write policy"));
+    insta::assert_snapshot!(
+        "proxy_unauthorized_branch",
+        diagnostics(&rejected, root, proxy_port)
+    );
     assert_ref(&upstream_repository, "refs/heads/tasks/mixed", false);
     assert_ref(&upstream_repository, "refs/heads/wrong", false);
 
@@ -179,6 +224,10 @@ fn standalone_proxy_enforces_one_authorized_keys_file_and_shared_write_policy() 
         &proxy_known_hosts,
     );
     assert!(!rejected.status.success());
+    insta::assert_snapshot!(
+        "proxy_tag_rejected",
+        diagnostics(&rejected, root, proxy_port)
+    );
     assert_ref(&upstream_repository, "refs/tags/v1", false);
 
     remove_key(&config_path, &proxy_binary, &authorized.fingerprint).unwrap();
@@ -199,6 +248,26 @@ fn git(directory: &Path, args: &[&str]) {
             .output()
             .unwrap(),
     );
+}
+
+fn git_refs(repository: &Path) -> Vec<u8> {
+    let output = Command::new("git")
+        .current_dir(repository)
+        .arg("show-ref")
+        .output()
+        .unwrap();
+    assert_success(&output);
+    output.stdout
+}
+
+fn diagnostics(output: &Output, root: &Path, port: u16) -> String {
+    String::from_utf8_lossy(&output.stderr)
+        .replace(root.to_str().unwrap(), "[TEMP]")
+        .replace(&format!("127.0.0.1:{port}"), "127.0.0.1:[PORT]")
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn git_proxy(directory: &Path, args: &[&str], identity: &Path, known_hosts: &Path) -> Output {

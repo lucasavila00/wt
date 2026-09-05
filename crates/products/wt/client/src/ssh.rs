@@ -474,8 +474,10 @@ mod tests {
         .unwrap();
 
         let config = fs::read_to_string(temp.path().join(".ssh/wt/config")).unwrap();
-        assert!(config.contains("Host local.broken\n"));
-        assert!(config.contains("Host local.broken-direct\n"));
+        insta::assert_snapshot!(
+            "error_world_ssh_config",
+            normalize_home(&config, temp.path())
+        );
     }
 
     #[test]

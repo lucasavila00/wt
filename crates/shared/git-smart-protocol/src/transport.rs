@@ -14,6 +14,39 @@ use std::process::{Child, Command, Stdio};
 type PushResultMessage<'a> = &'a dyn Fn(&[u8], &[u8], bool) -> Result<String>;
 type ResponseMessage<'a> = &'a dyn Fn(&[u8]) -> Result<String>;
 
+// Keep the upstream session owned while authorization and object staging run.
+// Once bridging starts, bridge_child owns process shutdown instead.
+struct PendingPush(Option<Child>);
+
+impl std::ops::Deref for PendingPush {
+    type Target = Child;
+
+    fn deref(&self) -> &Child {
+        self.0.as_ref().expect("pending Git process")
+    }
+}
+
+impl std::ops::DerefMut for PendingPush {
+    fn deref_mut(&mut self) -> &mut Child {
+        self.0.as_mut().expect("pending Git process")
+    }
+}
+
+impl PendingPush {
+    fn into_child(mut self) -> Child {
+        self.0.take().expect("pending Git process")
+    }
+}
+
+impl Drop for PendingPush {
+    fn drop(&mut self) {
+        if let Some(child) = &mut self.0 {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 pub trait DuplexStream: Read + Write + Send + 'static {
     fn try_clone_stream(&self) -> std::io::Result<Self>
     where
@@ -72,7 +105,7 @@ impl GitTarget<'_> {
     }
 }
 
-fn spawn_git(target: &GitTarget<'_>, service: GitService) -> Result<Child> {
+pub(crate) fn spawn_git(target: &GitTarget<'_>, service: GitService) -> Result<Child> {
     let mut command = match target {
         GitTarget::Local { repositories, path } => {
             let mut command = Command::new(service.command());
@@ -183,11 +216,11 @@ pub fn serve_git<S: DuplexStream>(
     rejection_message: Option<&dyn Fn(&PushViolation) -> String>,
     push_message: Option<PushResultMessage<'_>>,
 ) -> Result<GitServeResult> {
-    let mut child = spawn_git(&target, service)?;
+    let mut child = PendingPush(Some(spawn_git(&target, service)?));
     let provider_host = target.provider_host();
     forward_advertisement(&mut child, stream, provider_host)?;
     if service == GitService::UploadPack {
-        bridge_child(stream, child, None, false, provider_host)?;
+        bridge_child(stream, child.into_child(), None, None, provider_host)?;
         return Ok(GitServeResult::default());
     }
 
@@ -198,10 +231,15 @@ pub fn serve_git<S: DuplexStream>(
             .map(|message| message(&violation))
             .unwrap_or_else(|| violation.to_string());
         reject_push(stream, &commands, &reason)?;
-        let _ = child.kill();
-        let _ = child.wait();
         return Ok(GitServeResult::default());
     }
+    let pack = match crate::staging::validated_pack(stream, &target, &commands) {
+        Ok(pack) => pack,
+        Err(error) => {
+            reject_push(stream, &commands, &format!("push rejected: {error:#}"))?;
+            return Ok(GitServeResult::default());
+        }
+    };
     child
         .stdin
         .as_mut()
@@ -214,10 +252,10 @@ pub fn serve_git<S: DuplexStream>(
     };
     let response = bridge_child(
         stream,
-        child,
+        child.into_child(),
         (sideband && push_message.is_some())
             .then_some(&message as &dyn Fn(&[u8]) -> Result<String>),
-        true,
+        Some(pack),
         provider_host,
     )?
     .expect("receive-pack response is captured");
@@ -315,19 +353,22 @@ fn bridge_child<S: DuplexStream>(
     stream: &mut S,
     mut child: Child,
     push_message: Option<ResponseMessage<'_>>,
-    capture_response: bool,
+    pack: Option<std::fs::File>,
     provider_host: Option<&str>,
 ) -> Result<Option<Vec<u8>>> {
     let stderr = child.stderr.take().context("Git service has no stderr")?;
     let stderr = std::thread::spawn(move || capture_stderr(stderr));
-    let mut request_stream = stream.try_clone_stream().context("clone gateway stream")?;
     let shutdown = stream.try_clone_stream().context("clone gateway stream")?;
+    let capture_response = pack.is_some();
     let mut child_stdin = child.stdin.take().context("Git service has no stdin")?;
-    let request = std::thread::spawn(move || {
-        let result = copy_unbuffered(&mut request_stream, &mut child_stdin);
-        drop(child_stdin);
-        result
-    });
+    let request = if let Some(mut pack) = pack {
+        // Drain the upstream response concurrently with sending the staged pack.
+        // Never forward unchecked trailing client input after that pack.
+        std::thread::spawn(move || std::io::copy(&mut pack, &mut child_stdin))
+    } else {
+        let mut request_stream = stream.try_clone_stream().context("clone gateway stream")?;
+        std::thread::spawn(move || copy_unbuffered(&mut request_stream, &mut child_stdin))
+    };
     let mut child_stdout = child.stdout.take().context("Git service has no stdout")?;
     let response = if capture_response {
         let mut response = Vec::new();
@@ -431,10 +472,10 @@ mod tests {
         );
         let error = anyhow::anyhow!("read Git packet header")
             .context(provider_error_context(Some("github.com"), openssh));
-        let rendered = format!("WT Git gateway failed: {error:#}");
+        let rendered = format!("WT Git operation failed: {error:#}");
 
         insta::assert_snapshot!(rendered, @r###"
-        WT Git gateway failed: Git provider host key verification failed for github.com.
+        WT Git operation failed: Git provider host key verification failed for github.com.
         The configured SSH host-key pin does not match the provider.
         Update the known-hosts input for the service that launched this Git operation, then reinstall that service.
         This cannot be repaired by the downstream Git client.: read Git packet header

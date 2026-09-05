@@ -9,6 +9,8 @@ description = "Shared Git transport and write authorization for WT"
 [dependencies]
 anyhow = { workspace = true }
 serde = { workspace = true }
+tempfile.workspace = true
+flate2.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

@@ -29,12 +29,10 @@ The bridge uses a child process, two data directions, and a stderr pipe. Check
 every error path after `spawn_git`: the child must be stopped and reaped, pipes
 must keep draining, and threads must be joined.
 
-There are two current rough edges worth remembering:
-
-- errors after a good advertisement but before bridging do not share one child
-  cleanup guard;
-- `serve_git` starts draining stderr after the advertisement, so a very noisy
-  upstream could block early.
+Pending upstream pushes have a cleanup guard during authorization and staging.
+The staging repository and packfiles are removed on success and failure.
+`serve_git` still starts draining stderr after staging, so a very noisy upstream
+could block early.
 
 ## Keep parsing narrow and bounded
 
@@ -44,6 +42,10 @@ when parsing changes.
 
 This is not a general Git protocol library. Supporting a new capability needs
 an end-to-end test, not just a more permissive parser.
+
+Push staging reads pack boundaries incrementally, then uses Git to validate
+objects and ancestry. Keep SHA-1/SHA-256, thin-pack, corrupted-pack and truncated
+input tests. Never forward trailing client input after the validated pack.
 
 ## Watch memory when adding messages
 

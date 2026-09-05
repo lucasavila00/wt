@@ -15,8 +15,16 @@ The prefix itself is not a branch. Something must come after its final slash.
 The crate checks every ref before it forwards the push. One denied ref rejects
 the whole push, including refs that would have been allowed on their own.
 
-Updates, force-pushes, and deletions all use the same rule. Tags and every other
-non-branch ref are always denied.
+Allowed branches may be created or updated only by fast-forward. History
+rewrites (including `--force-with-lease`) and branch deletions are rejected by
+the gateway regardless of upstream protection settings. Tags and every other
+non-branch ref are always denied. A force flag on an actual fast-forward does
+not discard history and is allowed.
+
+The gateway stages incoming objects and checks that each existing branch's old
+commit is an ancestor of its new commit before forwarding any ref commands.
+One invalid update rejects the entire push. Original old object IDs are passed
+upstream so a concurrent change still causes a stale-ref rejection.
 
 ## Configuration validation
 

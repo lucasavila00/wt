@@ -1,0 +1,8 @@
+---
+source: crates/tests/end-to-end/tests/git_proxy.rs
+expression: "diagnostics(&rejected, root, proxy_port)"
+---
+To ssh://127.0.0.1:[PORT]/127.0.0.1/[TEMP]/upstream.git
+ ! [remote rejected] HEAD^ -> tasks/fix (push rejected: non-fast-forward update to `refs/heads/tasks/fix` rejected; pushes must preserve history)
+ ! [remote rejected] HEAD -> tasks/new (push rejected: non-fast-forward update to `refs/heads/tasks/fix` rejected; pushes must preserve history)
+error: failed to push some refs to 'ssh://127.0.0.1:[PORT]/127.0.0.1/[TEMP]/upstream.git'

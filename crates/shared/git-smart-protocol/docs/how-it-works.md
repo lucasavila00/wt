@@ -17,11 +17,15 @@ inspect the fetch request or packfile.
 For `git-receive-pack`, Git first sends a list of ref updates. The crate holds
 that list long enough to check every ref.
 
-- If every ref is allowed, the list and packfile go to the upstream.
+- If every ref is allowed, the gateway fetches upstream objects into a temporary
+  bare repository and stages the incoming pack. Git validates the objects and
+  the gateway checks commit ancestry for every updated branch. Only then do the
+  original command list and validated pack go to the upstream.
 - If one ref is denied, none of them go to the upstream. The client gets a
   rejection for the whole push.
 
-That check is about authorization. The upstream can still reject an otherwise
+Branch deletions and non-fast-forward updates are rejected independently of
+upstream settings. The upstream can still reject an otherwise
 allowed push for its own reasons, such as branch protection or a stale ref.
 
 ## Targets
@@ -46,4 +50,11 @@ reported as `ok`. A requested update is not proof that it succeeded.
 - Git packets are limited to 65,520 bytes.
 - A push command list is limited to 1 MiB.
 - Captured upstream stderr is limited to 16 KiB.
-- Packfiles are streamed, not stored.
+- Push validation downloads all advertised upstream history on each push and
+  temporarily stores it alongside the incoming pack and unpacked objects. This
+  adds bandwidth, disk usage and latency proportional to repository size; there
+  is no persistent object cache or staging quota.
+- Pack framing is read incrementally with fixed-size buffers. Git validates
+  checksums, delta bases and object contents; ancestry checks ignore replace refs.
+- Push options and signed pushes are rejected; their additional framing is not
+  supported by staging.

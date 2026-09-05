@@ -151,10 +151,7 @@ fn world_scoped_transports_read_and_write_multiple_repositories() {
         &relay_socket,
     );
     assert_success(&published);
-    let diagnostics = String::from_utf8_lossy(&published.stderr);
-    assert!(diagnostics.contains("This is a WT-managed development environment"));
-    assert!(diagnostics.contains("Published branch `wt/fix`"));
-    assert!(diagnostics.contains("wtg tools --help"));
+    insta::assert_snapshot!("published_branch", diagnostics(&published));
     assert_ref(&upstream, "refs/heads/wt/fix", true);
 
     fs::write(checkout.join("README.md"), "second\n").unwrap();
@@ -164,31 +161,46 @@ fn world_scoped_transports_read_and_write_multiple_repositories() {
         &["push", "origin", "wt/fix"],
         &second_relay_socket,
     ));
+    let published = git_stdout(&upstream, &["rev-parse", "refs/heads/wt/fix"]);
     git(&checkout, &["reset", "--hard", "HEAD^"]);
-    assert_success(&git_output(
+    let rejected = git_output(
         &checkout,
         &["push", "--force", "origin", "wt/fix"],
         &second_relay_socket,
-    ));
-    let local = git_stdout(&checkout, &["rev-parse", "wt/fix"]);
-    let published = git_stdout(&upstream, &["rev-parse", "refs/heads/wt/fix"]);
-    assert_eq!(local, published);
+    );
+    assert!(!rejected.status.success());
+    insta::assert_snapshot!("history_rewrite_rejected", diagnostics(&rejected));
+    let rejected = git_output(
+        &checkout,
+        &[
+            "push",
+            "--force-with-lease",
+            "origin",
+            "wt/fix",
+            "HEAD:refs/heads/wt/mixed",
+        ],
+        &second_relay_socket,
+    );
+    assert!(!rejected.status.success());
+    insta::assert_snapshot!("mixed_history_rewrite_rejected", diagnostics(&rejected));
+    assert_ref(&upstream, "refs/heads/wt/mixed", false);
+    assert_eq!(
+        published,
+        git_stdout(&upstream, &["rev-parse", "refs/heads/wt/fix"])
+    );
 
     git(&checkout, &["switch", "-c", "wrong"]);
     fs::write(checkout.join("README.md"), "wrong\n").unwrap();
     git(&checkout, &["commit", "-am", "wrong"]);
     let rejected = git_output(&checkout, &["push", "origin", "wrong"], &relay_socket);
     assert!(!rejected.status.success());
-    assert!(
-        String::from_utf8_lossy(&rejected.stderr).contains("must use the shared `wt/` prefix"),
-        "{}",
-        String::from_utf8_lossy(&rejected.stderr)
-    );
+    insta::assert_snapshot!("unauthorized_branch_rejected", diagnostics(&rejected));
     assert_ref(&upstream, "refs/heads/wrong", false);
 
     git(&checkout, &["tag", "v1"]);
     let rejected = git_output(&checkout, &["push", "origin", "v1"], &relay_socket);
     assert!(!rejected.status.success());
+    insta::assert_snapshot!("tag_rejected", diagnostics(&rejected));
     assert_ref(&upstream, "refs/tags/v1", false);
 
     let deleted = git_output(
@@ -196,19 +208,16 @@ fn world_scoped_transports_read_and_write_multiple_repositories() {
         &["push", "origin", "--delete", "wt/fix"],
         &second_relay_socket,
     );
-    assert_success(&deleted);
-    assert!(String::from_utf8_lossy(&deleted.stderr).contains("Deleted branch `wt/fix`"));
-    assert_ref(&upstream, "refs/heads/wt/fix", false);
+    assert!(!deleted.status.success());
+    insta::assert_snapshot!("branch_deletion_rejected", diagnostics(&deleted));
+    assert_ref(&upstream, "refs/heads/wt/fix", true);
 
-    let updates = wait_for_branch_updates(&registry, 4);
+    let updates = wait_for_branch_updates(&registry, 2);
     assert_eq!(updates[0].world_id, second_world.into());
+    assert_eq!(updates[0].new_oid.as_deref(), Some(published.trim()));
+    assert_eq!(updates[1].world_id, first_world.into());
     assert_eq!(
-        updates[0].new_oid.as_deref(),
-        Some("0000000000000000000000000000000000000000")
-    );
-    assert_eq!(updates[3].world_id, first_world.into());
-    assert_eq!(
-        updates[3].previous_oid.as_deref(),
+        updates[1].previous_oid.as_deref(),
         Some("0000000000000000000000000000000000000000")
     );
 
@@ -331,6 +340,14 @@ fn assert_success(output: &Output) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn diagnostics(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn assert_ref(repository: &Path, reference: &str, exists: bool) {

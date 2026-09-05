@@ -1,0 +1,7 @@
+---
+source: crates/tests/end-to-end/tests/git_proxy.rs
+expression: "diagnostics(&rejected, root, proxy_port)"
+---
+To ssh://127.0.0.1:[PORT]/127.0.0.1/[TEMP]/upstream.git
+ ! [remote rejected] v1 -> v1 (tags and non-branch refs cannot be pushed)
+error: failed to push some refs to 'ssh://127.0.0.1:[PORT]/127.0.0.1/[TEMP]/upstream.git'

@@ -62,11 +62,18 @@ fn valid_branch_name(value: &str) -> bool {
 pub enum PushViolation {
     NonBranch { reference: String },
     Unauthorized { reference: String },
+    Deletion { reference: String },
 }
 
 impl std::fmt::Display for PushViolation {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Deletion { reference } => {
+                write!(
+                    formatter,
+                    "branch `{reference}` cannot be deleted; pushes must preserve history"
+                )
+            }
             Self::NonBranch { .. } => {
                 formatter.write_str("tags and non-branch refs cannot be pushed")
             }
@@ -99,6 +106,11 @@ pub(crate) fn push_violation(
         }
         if !policy.permits(&update.reference) {
             return Ok(Some(PushViolation::Unauthorized {
+                reference: update.reference,
+            }));
+        }
+        if update.new_oid.bytes().all(|byte| byte == b'0') {
+            return Ok(Some(PushViolation::Deletion {
                 reference: update.reference,
             }));
         }
@@ -153,5 +165,19 @@ mod tests {
         assert!(WritePolicy::new("wt/", []).is_err());
         assert!(WritePolicy::new("refs/heads/wt", []).is_err());
         assert!(WritePolicy::new("refs/heads/wt/", ["main".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn rejects_deletions_even_for_explicitly_allowed_branches() {
+        let policy = WritePolicy::new("refs/heads/wt/", ["refs/heads/main".to_owned()]).unwrap();
+        let mut section = commands(&["refs/heads/wt/new"]);
+        section.truncate(section.len() - 4);
+        write_packet(
+            &mut section,
+            format!("{} {} refs/heads/main\n", "a".repeat(40), "0".repeat(40)).as_bytes(),
+        )
+        .unwrap();
+        section.extend_from_slice(b"0000");
+        insta::assert_snapshot!(validate_push(&section, &policy).unwrap_err().to_string(), @"branch `refs/heads/main` cannot be deleted; pushes must preserve history");
     }
 }

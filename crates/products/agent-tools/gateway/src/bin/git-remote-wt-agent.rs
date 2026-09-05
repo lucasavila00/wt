@@ -62,7 +62,7 @@ pub fn run_from(args: impl IntoIterator<Item = String>) -> Result<()> {
             response
                 .error
                 .as_deref()
-                .unwrap_or("gateway rejected Git operation")
+                .unwrap_or("Git operation rejected")
         );
     }
     if let Some(message) = response.message {
@@ -108,7 +108,17 @@ fn copy_stdio(mut relay: UnixStream) -> Result<()> {
         if count == 0 {
             break;
         }
-        relay.write_all(&buffer[..count])?;
+        if let Err(error) = relay.write_all(&buffer[..count]) {
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe
+                    | std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::NotConnected
+            ) {
+                break;
+            }
+            return Err(error.into());
+        }
     }
     let _ = relay.shutdown(std::net::Shutdown::Write);
     output

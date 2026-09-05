@@ -427,6 +427,7 @@ fn parse_world_id(world_id: &str) -> Result<WorldId> {
 
 pub(super) fn push_rejection_message(violation: &PushViolation) -> String {
     match violation {
+        PushViolation::Deletion { .. } => violation.to_string(),
         PushViolation::NonBranch { .. } => {
             "tags and non-branch refs cannot be pushed from this environment".to_owned()
         }

@@ -31,7 +31,7 @@ pub(crate) fn read_packet_section(mut from: impl Read) -> Result<Vec<u8>> {
     }
 }
 
-fn read_packet(from: &mut impl Read) -> Result<Vec<u8>> {
+pub(crate) fn read_packet(from: &mut impl Read) -> Result<Vec<u8>> {
     let mut header = [0_u8; 4];
     from.read_exact(&mut header)
         .context("read Git packet header")?;

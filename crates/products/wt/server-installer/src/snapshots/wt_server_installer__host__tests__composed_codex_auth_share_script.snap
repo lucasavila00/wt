@@ -1,0 +1,158 @@
+---
+source: crates/products/wt/server-installer/src/host.rs
+expression: "std::str::from_utf8(&codex_auth_share()).unwrap()"
+---
+#!/bin/sh
+# shellcheck shell=sh
+# Canonical WT host/guest filesystem identity. Keep the Rust identity contract
+# in sync; repository tests compare every field.
+WT_IDENTITY_USER=wt
+WT_IDENTITY_GROUP=wt
+WT_IDENTITY_UID=1001
+WT_IDENTITY_GID=1001
+WT_IDENTITY_HOME=/home/wt
+readonly WT_IDENTITY_USER WT_IDENTITY_GROUP WT_IDENTITY_UID WT_IDENTITY_GID WT_IDENTITY_HOME
+
+wt_require_effective_identity() {
+    wt_actual_user=$(id -un)
+    wt_actual_group=$(id -gn)
+    wt_actual_uid=$(id -u)
+    wt_actual_gid=$(id -g)
+    wt_passwd_entry=$(getent passwd "$wt_actual_uid" || true)
+    if test -n "$wt_passwd_entry"; then
+        wt_actual_primary_gid=$(printf '%s\n' "$wt_passwd_entry" | cut -d: -f4)
+        wt_actual_home=$(printf '%s\n' "$wt_passwd_entry" | cut -d: -f6)
+    else
+        wt_actual_primary_gid='<unknown>'
+        wt_actual_home='<unknown>'
+    fi
+    if test "$wt_actual_user" != "$WT_IDENTITY_USER" ||
+        test "$wt_actual_group" != "$WT_IDENTITY_GROUP" ||
+        test "$wt_actual_uid" != "$WT_IDENTITY_UID" ||
+        test "$wt_actual_gid" != "$WT_IDENTITY_GID" ||
+        test "$wt_actual_primary_gid" != "$WT_IDENTITY_GID" ||
+        test "$wt_actual_home" != "$WT_IDENTITY_HOME"; then
+        echo "WT identity mismatch: expected user/group=$WT_IDENTITY_USER:$WT_IDENTITY_GROUP uid/gid=$WT_IDENTITY_UID:$WT_IDENTITY_GID home=$WT_IDENTITY_HOME; actual user/group=$wt_actual_user:$wt_actual_group effective uid/gid=$wt_actual_uid:$wt_actual_gid account primary gid=$wt_actual_primary_gid home=$wt_actual_home" >&2
+        return 1
+    fi
+}
+
+wt_require_owned_directory() {
+    wt_identity_path=$1
+    if test -L "$wt_identity_path"; then
+        wt_actual_type=symlink
+    elif test -d "$wt_identity_path"; then
+        wt_actual_type=directory
+    elif test -e "$wt_identity_path"; then
+        wt_actual_type=other
+    else
+        wt_actual_type=missing
+    fi
+    if test "$wt_actual_type" = missing; then
+        wt_actual_uid='<unknown>'
+        wt_actual_gid='<unknown>'
+    else
+        wt_actual_uid=$(stat -c %u "$wt_identity_path")
+        wt_actual_gid=$(stat -c %g "$wt_identity_path")
+    fi
+    if test "$wt_actual_type" != directory ||
+        test "$wt_actual_uid" != "$WT_IDENTITY_UID" ||
+        test "$wt_actual_gid" != "$WT_IDENTITY_GID"; then
+        echo "WT directory identity mismatch at $wt_identity_path: expected type=directory uid/gid=$WT_IDENTITY_UID:$WT_IDENTITY_GID; actual type=$wt_actual_type uid/gid=$wt_actual_uid:$wt_actual_gid" >&2
+        return 1
+    fi
+}
+
+# shellcheck shell=sh
+wt_publish_shared_file() {
+    wt_publish_check_validator=$1
+    wt_publish_validator=$2
+    wt_publish_source=$3
+    wt_publish_share=$4
+    wt_publish_temporary=$5
+    wt_publish_destination=$6
+    wt_publish_check_only=$7
+
+    "$wt_publish_check_validator"
+    if test -e "$wt_publish_share" || test -L "$wt_publish_share"; then
+        wt_require_owned_directory "$wt_publish_share"
+        wt_publish_share_mode=$(stat -c %a "$wt_publish_share")
+        if test "$wt_publish_share_mode" != 700; then
+            echo "directory mode drift at $wt_publish_share: expected mode=0700; actual mode=0$wt_publish_share_mode" >&2
+            exit 1
+        fi
+    elif test "$wt_publish_check_only" = false; then
+        install -d -m 0700 "$wt_publish_share"
+    fi
+    test "$wt_publish_check_only" = false || exit 0
+
+    cleanup() {
+        rm -f "$wt_publish_temporary"
+    }
+    trap cleanup EXIT HUP INT TERM
+
+    while :; do
+        "$wt_publish_validator"
+        rm -f "$wt_publish_temporary"
+        install -m 0600 "$wt_publish_source" "$wt_publish_temporary"
+        mv -f "$wt_publish_temporary" "$wt_publish_destination"
+        cmp -s "$wt_publish_source" "$wt_publish_destination" && exit 0
+    done
+}
+
+set -eu
+
+# The installer prepends wt-identity.sh when this asset is installed. Source
+# the sibling contract when invoking the checked-in asset directly.
+if ! command -v wt_require_effective_identity >/dev/null 2>&1; then
+    wt_asset_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+    # shellcheck source=wt-identity.sh
+    . "$wt_asset_dir/wt-identity.sh"
+fi
+if ! command -v wt_publish_shared_file >/dev/null 2>&1; then
+    # shellcheck source=publish-shared-file.sh
+    . "$wt_asset_dir/publish-shared-file.sh"
+fi
+
+case $# in
+    0) check_only=false; auth=$WT_IDENTITY_HOME/.codex/auth.json; share=$WT_IDENTITY_HOME/.codex/.wt-auth ;;
+    1)
+        test "$1" = --check || { echo 'usage: share-codex-auth.sh [--check] [AUTH SHARE]' >&2; exit 2; }
+        check_only=true
+        auth=$WT_IDENTITY_HOME/.codex/auth.json
+        share=$WT_IDENTITY_HOME/.codex/.wt-auth
+        ;;
+    2) check_only=false; auth=$1; share=$2 ;;
+    3)
+        test "$1" = --check || { echo 'usage: share-codex-auth.sh [--check] [AUTH SHARE]' >&2; exit 2; }
+        check_only=true
+        auth=$2
+        share=$3
+        ;;
+    *) echo 'usage: share-codex-auth.sh [--check] [AUTH SHARE]' >&2; exit 2 ;;
+esac
+
+temporary=$share.wt-new.$$
+shared_auth=$share/auth.json
+
+wt_require_effective_identity
+
+validate_auth() {
+    if test -L "$auth" || ! test -f "$auth"; then
+        echo "Codex authentication must be a regular, non-symlink file: $auth" >&2
+        exit 1
+    fi
+    auth_uid=$(stat -c %u "$auth")
+    auth_gid=$(stat -c %g "$auth")
+    if test "$auth_uid" != "$WT_IDENTITY_UID" || test "$auth_gid" != "$WT_IDENTITY_GID"; then
+        echo "Codex authentication ownership mismatch at $auth: expected uid=$WT_IDENTITY_UID gid=$WT_IDENTITY_GID; actual uid=$auth_uid gid=$auth_gid" >&2
+        exit 1
+    fi
+}
+
+prepare_auth() {
+    validate_auth
+    chmod 0600 "$auth"
+}
+
+wt_publish_shared_file validate_auth prepare_auth "$auth" "$share" "$temporary" "$shared_auth" "$check_only"

@@ -46,20 +46,20 @@ pub fn run(args: Vec<String>) -> Result<()> {
     )
     .context("send command to the WT Git relay")?;
     let response: TransportResponse = read_json_line(&mut relay)
-        .context("read the WT Git gateway response; the relay or gateway may have stopped")?;
+        .context("read the WT tools response; the connection to the WT server may have stopped")?;
     if !response.ok {
         bail!(
             "{}",
             response
                 .error
                 .as_deref()
-                .unwrap_or("gateway rejected command")
+                .unwrap_or("WT tools command rejected")
         );
     }
     if let Some(message) = response.message {
         std::io::stdout()
             .write_all(message.as_bytes())
-            .context("write gateway output")?;
+            .context("write WT tools output")?;
     }
     Ok(())
 }
@@ -109,8 +109,8 @@ mod tests {
 
     #[test]
     fn renders_json_errors() {
-        insta::assert_snapshot!(render_error("gateway rejected command"), @r###"
-        {"error":{"message":"gateway rejected command"}}
+        insta::assert_snapshot!(render_error("WT tools command rejected"), @r###"
+        {"error":{"message":"WT tools command rejected"}}
         "###);
     }
 
