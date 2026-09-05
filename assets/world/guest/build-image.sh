@@ -14,6 +14,8 @@ install -d -m 0755 /etc/codex
 install -m 0644 /var/tmp/wt-codex-requirements.toml \
     /etc/codex/requirements.toml
 install -d -m 0700 -o "$WT_USER" -g "$WT_GROUP" "$WT_HOME/.local/state/wt"
+install -m 0600 -o "$WT_USER" -g "$WT_GROUP" \
+    /var/tmp/wt-codex-config.toml "$WT_HOME/.codex/config.toml"
 
 {
     dpkg-query -W -f='${Package}\t${Version}\n' \

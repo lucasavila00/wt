@@ -58,7 +58,11 @@ caller, not this package.
 `scripts/install-agapi VERSION` installs a published `agapi-vVERSION` release and
 its matching Codex CLI. Stop `serve`, update, and restart it against the same
 state directory. No WT release, world rebuild, or provider-specific WT API is
-required. The installer does not overwrite Codex configuration or credentials.
+required. The installer keeps its Codex binary at
+`~/.local/share/agapi/codex/bin/codex`; pass this path to `serve --codex`.
+It does not replace the interactive `codex` command, alter shell profiles, or
+overwrite Codex configuration or credentials. At runtime, Codex still uses the
+normal `~/.codex` home, including WT's shared authentication and session mounts.
 
 ## Verify
 
