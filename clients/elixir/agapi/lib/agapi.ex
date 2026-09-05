@@ -22,7 +22,9 @@ defmodule Agapi do
     error -> {:error, %Agapi.Error{message: Exception.message(error), kind: :transport}}
   end
 
-  defp decode(%{"api_version" => 1, "request_id" => id} = response, execution, %{"request_id" => id}) do
+  defp decode(%{"api_version" => 1, "request_id" => id} = response, execution, %{
+         "request_id" => id
+       }) do
     case {response, execution.exit_status} do
       {%{"outcome" => "ok", "result" => result}, 0} when is_map(result) ->
         {:ok, result}

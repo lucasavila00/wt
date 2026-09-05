@@ -19,7 +19,12 @@ defmodule Agapi.Local do
           {:exit, {:status, status}}, acc -> %{acc | exit_status: status}
         end)
 
-      {:ok, %{output | stdout: IO.iodata_to_binary(output.stdout), stderr: IO.iodata_to_binary(output.stderr)}}
+      {:ok,
+       %{
+         output
+         | stdout: IO.iodata_to_binary(output.stdout),
+           stderr: IO.iodata_to_binary(output.stderr)
+       }}
     end)
   end
 end

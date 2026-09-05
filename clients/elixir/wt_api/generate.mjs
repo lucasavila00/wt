@@ -23,6 +23,8 @@ const schema = {
 writeFileSync(join(root, "wt_api.schema.json"), `${JSON.stringify(schema, null, 2)}\n`);
 
 const publicTypes = [
+  "ExecWorldRequest",
+  "ExecWorldResult",
   "ListContextsRequest",
   "ListWorldsRequest",
   "ListContextsResult",

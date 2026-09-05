@@ -74,6 +74,72 @@ defmodule WtApi.Generated.Decoder do
   defp decode_value(_value, _type), do: {:error, "unexpected type"}
 end
 
+defmodule WtApi.Request.ExecWorld do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:args, :context, :executable, :request_id, :stdin, :world_id]
+  defstruct api_version: 1,
+            args: nil,
+            context: nil,
+            executable: nil,
+            expected_server_id: nil,
+            operation: "exec_world",
+            request_id: nil,
+            stdin: nil,
+            world_id: nil
+
+  @type t :: %__MODULE__{
+          api_version: number(),
+          args: [String.t()],
+          context: String.t(),
+          executable: String.t(),
+          expected_server_id: String.t() | nil,
+          operation: String.t(),
+          request_id: String.t(),
+          stdin: String.t(),
+          world_id: String.t()
+        }
+
+  @schema %{
+    api_version: {:required, {:const, 1}},
+    args: {:required, {:list, :string}},
+    context: {:required, :string},
+    executable: {:required, :string},
+    expected_server_id: {:optional, :uuid},
+    operation: {:required, {:const, "exec_world"}},
+    request_id: {:required, :uuid},
+    stdin: {:required, :string},
+    world_id: {:required, :uuid}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
+defmodule WtApi.Result.ExecWorld do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:exit_status, :stderr, :stdout]
+  defstruct exit_status: nil, stderr: nil, stdout: nil
+
+  @type t :: %__MODULE__{
+          exit_status: integer(),
+          stderr: String.t(),
+          stdout: String.t()
+        }
+
+  @schema %{
+    exit_status: {:required, :integer},
+    stderr: {:required, :string},
+    stdout: {:required, :string}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
 defmodule WtApi.Request.ListContexts do
   @moduledoc false
   alias WtApi.Generated.Decoder
