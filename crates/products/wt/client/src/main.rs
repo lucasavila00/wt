@@ -24,10 +24,10 @@ mod shell;
 
 const TEST_SERVER_WARNING: &str = "WARNING: WT E2E TEST SERVER — test fixtures are installed.";
 #[cfg(test)]
-const API_TYPESCRIPT_CONTRACT: &str = include_str!("../../../../../clients/elixir/wt_api/api.ts");
+const API_TYPESCRIPT_CONTRACT: &str = include_str!("../../../../../api/api.ts");
 const API_HELP: &str = concat!(
     "CANONICAL TYPESCRIPT CONTRACT:\n\n",
-    include_str!("../../../../../clients/elixir/wt_api/api.ts")
+    include_str!("../../../../../api/api.ts")
 );
 #[cfg(test)]
 use git_author::{parse_git_config_value, required_git_config_error};

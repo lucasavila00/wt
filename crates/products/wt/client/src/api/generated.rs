@@ -1,4 +1,4 @@
-// Generated from clients/elixir/wt_api/wt_api.schema.json. Do not edit.
+// Generated from api/api.ts. Do not edit.
 
 use serde::{Deserialize, Serialize};
 

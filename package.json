@@ -7,12 +7,12 @@
     "npm": "11.17.0"
   },
   "workspaces": [
-    "clients/elixir/wt_api",
+    "api",
     "crates/products/agent-tools/tools/typescript"
   ],
   "scripts": {
     "check:typescript": "npm run check --workspaces",
-    "generate:elixir-client": "npm run generate --workspace @wt/elixir-api-contract"
+    "generate:api": "npm run generate --workspace @wt/api-contract"
   },
   "devDependencies": {
     "prettier": "3.6.2",

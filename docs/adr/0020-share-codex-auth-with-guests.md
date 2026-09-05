@@ -3,7 +3,7 @@
 - Status: Amended by [ADR 0082](0082-scope-codex-sessions-to-worlds.md)
 - Date: 2026-08-21
 
-Agent binaries are installed and updated independently through agapi. The server user
+Controllers install and update their agent binaries independently. The server user
 must already be logged in. WT exposes exactly two server-backed resources:
 
 - one `/home/wt/.codex/sessions/<world-id>` directory, mounted read-write in

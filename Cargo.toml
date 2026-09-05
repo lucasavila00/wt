@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/products/agapi",
     "crates/products/wt/client",
     "crates/products/wt/control-protocol",
     "crates/products/wt/server",

@@ -47,8 +47,7 @@ const GUEST_INPUTS: &[(&str, &str, &[u8])] = &[
     ("guest-shell", "/var/tmp/wt-guest-shell", GUEST_SHELL),
     ("guest-prepare", "/var/tmp/wt-guest-prepare", GUEST_PREPARE),
 ];
-const GUEST_BINARY_INPUTS: &[(&str, &str)] =
-    &[("wtg", "/var/tmp/wtg"), ("agapi", "/var/tmp/agapi")];
+const GUEST_BINARY_INPUTS: &[(&str, &str)] = &[("wtg", "/var/tmp/wtg")];
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ImageManifest {
