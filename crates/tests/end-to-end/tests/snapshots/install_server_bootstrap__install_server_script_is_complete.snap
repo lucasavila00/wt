@@ -1,0 +1,116 @@
+---
+source: crates/tests/end-to-end/tests/install_server_bootstrap.rs
+expression: install_script
+---
+#!/usr/bin/env bash
+set -euo pipefail
+
+phase="starting setup"
+
+report_failure() {
+    status=$?
+    if (( status != 0 )); then
+        printf '\nWT server setup did not complete.\n' >&2
+        printf 'Failed phase: %s\n' "$phase" >&2
+        printf 'Fix the error above, then rerun the same install command. Setup is safe to rerun.\n' >&2
+    fi
+}
+trap report_failure EXIT
+
+show_phase() {
+    phase=$1
+    printf '\n==> %s\n' "$phase"
+}
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+"$root/scripts/require-clean-checkout"
+# shellcheck source=../assets/server/wt-identity.sh
+source "$root/assets/server/wt-identity.sh"
+phase="checking command-line arguments"
+
+if [[ $# -ne 2 || $1 != --config ]]; then
+    echo "usage: scripts/install-server --config PATH" >&2
+    exit 2
+fi
+config=$2
+
+if ! wt_require_effective_identity; then
+    echo "on a fresh server, first run scripts/bootstrap-server-user as root" >&2
+    exit 1
+fi
+if [[ ! -t 0 ]]; then
+    echo "run this script in an interactive terminal; sudo authentication is required" >&2
+    exit 1
+fi
+if [[ ! -f $config ]]; then
+    echo "config file not found: $config" >&2
+    exit 1
+fi
+config=$(realpath "$config")
+
+printf 'WT server setup\n'
+printf 'Config: %s\n' "$config"
+printf 'This installs or updates WT on this host. Setup is safe to rerun.\n'
+
+show_phase "Checking host requirements"
+# shellcheck source=/dev/null
+source /etc/os-release
+if [[ ${ID:-} != ubuntu || ${VERSION_ID:-} != 24.04 ]]; then
+    echo "Ubuntu 24.04 is required" >&2
+    exit 1
+fi
+if [[ $(dpkg --print-architecture) != amd64 ]]; then
+    echo "amd64 is required" >&2
+    exit 1
+fi
+if ! command -v cargo >/dev/null || ! command -v rustup >/dev/null; then
+    echo "Rust stable via rustup is required" >&2
+    exit 1
+fi
+
+show_phase "Installing host packages"
+sudo apt-get update -qq
+packages=( \
+    build-essential \
+    musl-tools \
+    pkg-config \
+    git \
+    curl \
+    cpu-checker \
+    qemu-system-x86 \
+    qemu-utils \
+    libvirt-daemon-system \
+    libvirt-clients \
+    virtiofsd \
+    virtinst \
+    libguestfs-tools \
+    ovmf \
+    libvirt-dev \
+    acl \
+    openssh-client \
+    openssh-server
+)
+sudo apt-get install -y -qq "${packages[@]}"
+rustup target add x86_64-unknown-linux-musl
+
+cd "$root"
+show_phase "Building the setup tool"
+setup_binary=target/release/wts
+cargo build --quiet --locked --release -p wt-server-installer --bin wts
+
+show_phase "Validating the install input"
+"$setup_binary" validate --config "$config"
+
+show_phase "Activating server permissions"
+sudo usermod -aG libvirt,kvm "$WT_IDENTITY_USER"
+groups=" $(id -nG) "
+if [[ $groups != *" libvirt "* || $groups != *" kvm "* ]]; then
+    echo "WT added the server user to the libvirt and kvm groups." >&2
+    echo "The current login cannot use those permissions yet." >&2
+    echo "Log out, log back in, then rerun:" >&2
+    printf '  scripts/install-server --config %q\n' "$config" >&2
+    exit 1
+fi
+
+show_phase "Installing WT"
+"$setup_binary" install --config "$config"

@@ -157,20 +157,18 @@ mod tests {
 
     #[test]
     fn composed_shell_assets_keep_their_interpreter() {
-        for script in [
-            shell_with_identity_contract(SERVER_HOST_INSTALL_FLOW),
-            codex_auth_share(),
-            ssh_authorized_keys_share(),
-        ] {
-            assert!(script.starts_with(
-                b"#!/bin/sh\n# shellcheck shell=sh\n# Canonical WT host/guest filesystem identity."
-            ));
-        }
-        for script in [codex_auth_share(), ssh_authorized_keys_share()] {
-            assert!(script
-                .windows(b"wt_publish_shared_file()".len())
-                .any(|window| { window == b"wt_publish_shared_file()" }));
-        }
+        insta::assert_snapshot!(
+            "composed_server_host_install_script",
+            std::str::from_utf8(&shell_with_identity_contract(SERVER_HOST_INSTALL_FLOW)).unwrap()
+        );
+        insta::assert_snapshot!(
+            "composed_codex_auth_share_script",
+            std::str::from_utf8(&codex_auth_share()).unwrap()
+        );
+        insta::assert_snapshot!(
+            "composed_ssh_authorized_keys_share_script",
+            std::str::from_utf8(&ssh_authorized_keys_share()).unwrap()
+        );
     }
 
     #[test]

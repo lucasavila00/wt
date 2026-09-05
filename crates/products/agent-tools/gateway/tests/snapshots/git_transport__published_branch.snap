@@ -1,0 +1,20 @@
+---
+source: crates/products/agent-tools/gateway/tests/git_transport.rs
+expression: diagnostics(&published)
+---
+remote: This is a WT-managed development environment for a coding agent.
+remote: The gateway does not expose developer SSH keys or provider credentials.
+remote: Do not look for credentials or use gh or glab.
+remote: WT gives you read access to every repository available to this gateway.
+remote: This Git operation is for project project.
+remote: Use normal Git for commits, fetches, pulls, and pushes.
+remote: Every WT world can write branches under wt/.
+remote: Pushes must preserve history; rewrites and branch deletions are rejected.
+remote: wtg tools uses explicit provider resource types and IDs; it does not infer
+remote: resources from the current checkout.
+remote: Run wtg tools --help to discover every available command.
+remote:
+remote: Published branch `wt/fix`.
+remote: Run `wtg tools --help` for explicit provider commands.
+To local.test:project.git
+ * [new branch]      wt/fix -> wt/fix

@@ -22,15 +22,17 @@ fn run(command: &mut Command) -> Output {
 }
 
 #[test]
+fn install_server_script_is_complete() {
+    let install_script = std::fs::read_to_string(workspace().join("scripts/install-server"))
+        .expect("read scripts/install-server");
+
+    insta::assert_snapshot!(install_script);
+}
+
+#[test]
 #[ignore = "requires the Ubuntu 24.04 server build and libvirt toolchain"]
 fn install_server_bootstraps_a_native_libvirt_installer() {
     let workspace = workspace();
-    let install_script = std::fs::read_to_string(workspace.join("scripts/install-server"))
-        .expect("read scripts/install-server");
-    assert!(install_script.contains("setup_binary=target/release/wts"));
-    assert!(install_script
-        .contains("cargo build --quiet --locked --release -p wt-server-installer --bin wts"));
-    assert!(!install_script.contains("--target x86_64-unknown-linux-musl -p wt-server-installer"));
 
     run(Command::new("cargo").current_dir(&workspace).args([
         "build",

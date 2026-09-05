@@ -1,7 +1,9 @@
 //! Shared Git transport and write authorization.
 
+mod pack;
 mod packet;
 mod policy;
+mod staging;
 mod transport;
 
 use serde::{Deserialize, Serialize};

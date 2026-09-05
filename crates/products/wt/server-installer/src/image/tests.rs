@@ -29,11 +29,23 @@ fn image_manifest_records_structured_package_versions() {
         development_tools: Default::default(),
     };
 
-    let json = serde_json::to_value(manifest).unwrap();
-    assert_eq!(json["packages"]["tmux"], "3.4-1");
-    assert_eq!(json["commit"], wt_control_protocol::GIT_COMMIT_SHA);
-    assert_eq!(json["guest_identity"]["uid"], 1001);
-    assert_eq!(json["guest_identity"]["gid"], 1001);
+    let json = serde_json::to_string_pretty(&manifest)
+        .unwrap()
+        .replace(wt_control_protocol::GIT_COMMIT_SHA, "[git-commit]");
+    insta::assert_snapshot!(json, @r###"
+    {
+      "commit": "[git-commit]",
+      "guest_identity": {
+        "uid": 1001,
+        "gid": 1001
+      },
+      "golden_sha256": "golden",
+      "packages": {
+        "tmux": "3.4-1"
+      },
+      "development_tools": {}
+    }
+    "###);
 }
 
 #[test]
@@ -87,12 +99,9 @@ fn development_tools_cache_identity_tracks_its_source_and_policy() {
 
 #[test]
 fn development_tools_cache_finalizer_needs_no_final_image_assets() {
-    let finalizer = std::str::from_utf8(builder::FINALIZE_DEVELOPMENT_TOOLS_CACHE).unwrap();
-
-    assert!(finalizer.contains("/var/lib/wt-image-development-tools"));
-    for final_asset in ["wt-tmux", "codex", "wt-host"] {
-        assert!(!finalizer.contains(final_asset));
-    }
+    insta::assert_snapshot!(
+        std::str::from_utf8(builder::FINALIZE_DEVELOPMENT_TOOLS_CACHE).unwrap()
+    );
 }
 
 #[test]
@@ -102,13 +111,12 @@ fn development_tools_cache_manifest_is_structured() {
         sha256: "image".to_owned(),
     };
 
-    assert_eq!(
-        serde_json::to_value(manifest).unwrap(),
-        serde_json::json!({
-            "identity": "policy",
-            "sha256": "image",
-        })
-    );
+    insta::assert_snapshot!(serde_json::to_string_pretty(&manifest).unwrap(), @r###"
+    {
+      "identity": "policy",
+      "sha256": "image"
+    }
+    "###);
 }
 
 #[test]
@@ -196,9 +204,7 @@ fn guest_image_supplies_interactive_codex_configuration() {
 
 #[test]
 fn guest_image_grants_the_user_nested_kvm_access() {
-    let prepare = std::str::from_utf8(GUEST_PREPARE).unwrap();
-
-    assert!(prepare.contains("usermod --append --groups sudo,kvm \"$WT_USER\""));
+    insta::assert_snapshot!(std::str::from_utf8(GUEST_PREPARE).unwrap());
 }
 
 #[test]

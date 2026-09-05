@@ -443,7 +443,12 @@ mod tests {
         );
         let git_config =
             fs::read_to_string(home.path().join(".ssh/wt-git-proxy/gitconfig")).unwrap();
-        assert!(git_config.contains("insteadOf = https://github.com/"));
+        insta::assert_snapshot!(git_config, @r###"
+        [url "wt-git-def456:github.com/"]
+          insteadOf = https://github.com/
+          insteadOf = git@github.com:
+          insteadOf = ssh://git@github.com/
+        "###);
         let checkout = home.path().join("checkout");
         assert!(Command::new("git")
             .args(["init", "--quiet"])

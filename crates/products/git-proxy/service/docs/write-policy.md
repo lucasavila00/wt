@@ -15,7 +15,10 @@ This allows any branch below `agents/`, plus the exact branch `main`.
 - `agents-old/fix-login` is denied.
 - tags are denied.
 
-Updates, force-pushes, and deletions use the same rule. Fetch, clone, and pull
+Only branch creation and fast-forward updates are allowed. The proxy validates
+commit ancestry itself and rejects history rewrites and branch deletions even
+when the upstream permits them. One denied update rejects the whole push.
+Fetch, clone, and pull
 do not use the write policy.
 
 ## Exactly when the check happens
