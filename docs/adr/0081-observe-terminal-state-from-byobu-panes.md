@@ -3,40 +3,43 @@
 - Status: Accepted
 - Date: 2026-08-26
 
+## Context
+
+WT needs shared live previews of interactive Codex panes without tracking
+Codex's application lifecycle. A world's playback PTY shows only its selected
+Byobu pane, so it cannot supply independent previews of every Codex pane.
+
 ## Decision
 
-Rendered Byobu panes are the sole source of live terminal state. The guest
-observer identifies each pane's foreground process through tmux and sends
-bounded normalized observations for `codex` panes through the authenticated
-path. Observations identify world, tmux session, pane, current working
-directory, checked-out Git branch when available, screen fingerprint, and
-timestamps. The registry persists that metadata; `wts` retains the latest
-normalized terminal frame for each observation in memory, without logs or
-history. Frames are owner-scoped and disappear on server restart or when their
-pane observation disappears. Observations contain no Codex IDs, hook events,
-or lifecycle state.
+The guest relay observes panes whose foreground process is `codex` and sends
+bounded normalized frames through its authenticated server connection. Each
+observation identifies `(world, tmux session, pane ID)` and includes freshness,
+screen fingerprint, current directory, optional Git branch, and a `PaneRender`
+containing styled terminal cells and the Byobu window index and name.
 
-The shell renders these server observations as Codex panes. Stale or missing
-data stays stale or unavailable; it never implies an application exit. Each
-Live preview renders only the frame for its exact `(world, tmux session,
-pane)` observation, never a world SSH/PTY playback screen. A frame is an inert
-grid of styled terminal cells, not ANSI replay, scrollback, or a raster image.
-Opening a preview verifies and selects its matching Codex pane through the
-playback connection's SSH control master, then shows the world. The shell does
-not switch panes to create observation state or create another playback
-connection for previews.
+`wts` keeps each world's complete latest snapshot only in bounded memory and
+serves it with owner-scoped world metadata. No pane observation is registry
+state. Server restart, world stop, or grant revocation clears the affected
+observations. Per-world operation locks and run generations prevent in-flight
+reports from restoring stale observations across a stop and restart.
 
-This is one incompatible cutover: delete every Codex lifecycle hook, report,
-protocol, persistence record, local liveness/checkout tracker, and related UI.
-Retain only shared authentication and startup history synchronization; neither
-may update live state.
+Each Live preview renders its exact observed frame as inert cells. Opening it
+verifies and selects that pane through the existing playback connection's SSH
+control master, then shows the shared Byobu session. Collecting observations
+does not switch panes or create playback connections.
+
+Labels use the familiar Byobu window name, such as `Codex · window “codex”`,
+with the window index available for ordering and disambiguation. Names and
+indexes are presentation data; the exact pane target remains the identity.
+
+Stale or missing observations mean unavailable terminal data, not application
+exit. No Codex lifecycle hook, thread ID, or rollout scan supplies live state.
+Authentication and per-world session storage are separate infrastructure.
 
 ## Consequences
 
-- Live state and its preview are shared for every observed Codex pane,
-  independent of client playback.
-- Multiple Codex panes in one world render independently and cannot display
-  another pane or a non-Codex tab.
-- WT depends on terminal semantics and represents uncertainty explicitly.
-- Codex upgrades cannot strand WT lifecycle state.
-- Codex behind a foreground wrapper is not observed.
+- Multiple Codex panes have independent previews, regardless of client playback.
+- Window renames appear on the next report without changing pane identity.
+- Observations disappear completely on server restart and return on new reports.
+- WT depends on terminal semantics and represents uncertainty explicitly;
+  Codex behind a foreground wrapper is not observed.
