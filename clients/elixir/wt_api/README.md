@@ -38,6 +38,11 @@ Standard error remains separate from the JSON response; no shell or temporary
 file participates in transport. Failures are returned as `WtApi.TransportError`,
 `WtApi.ProtocolError`, or `WtApi.ServerError` structs.
 
+`list_contexts` returns configured context names locally; its successful response has no
+server ID. `list_worlds` queries one context and returns its server ID and existing worlds
+without provisioning or modifying them. All server operations require a server ID on success
+and validate `expected_server_id` when supplied.
+
 ## Contract generation
 
 [`api.ts`](api.ts) is the canonical API contract. Beff turns it into

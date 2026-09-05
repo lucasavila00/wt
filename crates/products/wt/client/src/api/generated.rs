@@ -49,6 +49,19 @@ pub(super) enum Request {
         turn_id: String,
         world_id: String,
     },
+    #[serde(rename = "list_contexts")]
+    ListContexts {
+        api_version: u32,
+        request_id: String,
+    },
+    #[serde(rename = "list_worlds")]
+    ListWorlds {
+        api_version: u32,
+        context: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_server_id: Option<String>,
+        request_id: String,
+    },
     #[serde(rename = "read_world_mail")]
     ReadWorldMail {
         after_message_id: u64,
@@ -126,7 +139,8 @@ pub(super) enum ApiResponse {
         expires_at_unix_ms: Option<i64>,
         request_id: String,
         result: ApiResult,
-        server_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server_id: Option<String>,
     },
 }
 
@@ -151,6 +165,12 @@ pub(super) enum ApiResult {
         thread_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         window_name: Option<String>,
+    },
+    ListContexts {
+        contexts: Vec<String>,
+    },
+    ListWorlds {
+        worlds: Vec<ApiWorld>,
     },
     ReadWorldMail {
         high_water_message_id: u64,

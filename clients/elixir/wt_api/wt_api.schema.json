@@ -202,6 +202,65 @@
       ],
       "additionalProperties": false
     },
+    "ListContextsRequest": {
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "list_contexts"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        }
+      },
+      "required": [
+        "api_version",
+        "operation",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
+    "ListWorldsRequest": {
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
+        "context": {
+          "type": "string"
+        },
+        "expected_server_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "list_worlds"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        }
+      },
+      "required": [
+        "api_version",
+        "context",
+        "operation",
+        "request_id"
+      ],
+      "additionalProperties": false
+    },
     "ReadWorldMailRequest": {
       "type": "object",
       "properties": {
@@ -432,6 +491,8 @@
           "delete_world": "#/$defs/DeleteWorldRequest",
           "inspect_codex": "#/$defs/InspectCodexRequest",
           "interrupt_codex": "#/$defs/InterruptCodexRequest",
+          "list_contexts": "#/$defs/ListContextsRequest",
+          "list_worlds": "#/$defs/ListWorldsRequest",
           "read_world_mail": "#/$defs/ReadWorldMailRequest",
           "resume_codex": "#/$defs/ResumeCodexRequest",
           "send_codex_message": "#/$defs/SendCodexMessageRequest",
@@ -451,6 +512,12 @@
         },
         {
           "$ref": "#/$defs/InterruptCodexRequest"
+        },
+        {
+          "$ref": "#/$defs/ListContextsRequest"
+        },
+        {
+          "$ref": "#/$defs/ListWorldsRequest"
         },
         {
           "$ref": "#/$defs/ReadWorldMailRequest"
@@ -707,6 +774,36 @@
       ],
       "additionalProperties": false
     },
+    "ListContextsResult": {
+      "type": "object",
+      "properties": {
+        "contexts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "contexts"
+      ],
+      "additionalProperties": false
+    },
+    "ListWorldsResult": {
+      "type": "object",
+      "properties": {
+        "worlds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/World"
+          }
+        }
+      },
+      "required": [
+        "worlds"
+      ],
+      "additionalProperties": false
+    },
     "WorldMail": {
       "type": "object",
       "properties": {
@@ -827,6 +924,12 @@
           "$ref": "#/$defs/InspectCodexResult"
         },
         {
+          "$ref": "#/$defs/ListContextsResult"
+        },
+        {
+          "$ref": "#/$defs/ListWorldsResult"
+        },
+        {
           "$ref": "#/$defs/ReadWorldMailResult"
         },
         {
@@ -869,8 +972,7 @@
         "api_version",
         "outcome",
         "request_id",
-        "result",
-        "server_id"
+        "result"
       ],
       "additionalProperties": false
     },

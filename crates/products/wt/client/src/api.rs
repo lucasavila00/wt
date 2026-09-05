@@ -18,7 +18,9 @@ const MAX_REQUEST_BYTES: u64 = 128 * 1024 * 1024;
 impl Request {
     fn api_version(&self) -> u32 {
         match self {
-            Self::CreateWorld { api_version, .. }
+            Self::ListContexts { api_version, .. }
+            | Self::ListWorlds { api_version, .. }
+            | Self::CreateWorld { api_version, .. }
             | Self::DeleteWorld { api_version, .. }
             | Self::StartCodex { api_version, .. }
             | Self::InspectCodex { api_version, .. }
@@ -32,7 +34,9 @@ impl Request {
 
     fn request_id(&self) -> &str {
         match self {
-            Self::CreateWorld { request_id, .. }
+            Self::ListContexts { request_id, .. }
+            | Self::ListWorlds { request_id, .. }
+            | Self::CreateWorld { request_id, .. }
             | Self::DeleteWorld { request_id, .. }
             | Self::StartCodex { request_id, .. }
             | Self::InspectCodex { request_id, .. }
@@ -46,7 +50,11 @@ impl Request {
 
     fn expected_server_id(&self) -> Option<&str> {
         match self {
-            Self::CreateWorld {
+            Self::ListContexts { .. } => None,
+            Self::ListWorlds {
+                expected_server_id, ..
+            }
+            | Self::CreateWorld {
                 expected_server_id, ..
             }
             | Self::DeleteWorld {
@@ -209,13 +217,6 @@ pub fn run() -> Result<()> {
         }
         None => None,
     };
-    let (context_name, operation) = match request_to_operation(request) {
-        Ok(request) => request,
-        Err(message) => {
-            return write_local_error(Some(request_id.to_string()), "invalid_request", message);
-        }
-    };
-    let request_hash = operation_hash(&operation);
     let config = match wt_client::config::ClientConfig::load() {
         Ok(config) => config,
         Err(error) => {
@@ -226,6 +227,29 @@ pub fn run() -> Result<()> {
             );
         }
     };
+    if matches!(request, Request::ListContexts { .. }) {
+        return finish(Reply {
+            request_id: Some(request_id.to_string()),
+            server_id: None,
+            expires_at_unix_ms: None,
+            outcome: ReplyOutcome::Ok {
+                result: ApiResult::ListContexts {
+                    contexts: config
+                        .contexts
+                        .iter()
+                        .map(|context| context.name.to_string())
+                        .collect(),
+                },
+            },
+        });
+    }
+    let (context_name, operation) = match request_to_operation(request) {
+        Ok(request) => request,
+        Err(message) => {
+            return write_local_error(Some(request_id.to_string()), "invalid_request", message);
+        }
+    };
+    let request_hash = operation_hash(&operation);
     let Some(context) = config.context(&context_name) else {
         return write_local_error(
             Some(request_id.to_string()),
@@ -251,6 +275,8 @@ fn operation_hash(operation: &Operation) -> String {
 
 fn request_to_operation(request: Request) -> std::result::Result<(String, Operation), String> {
     match request {
+        Request::ListContexts { .. } => Err("list_contexts is a client-local operation".to_owned()),
+        Request::ListWorlds { context, .. } => Ok((context, Operation::ListWorlds)),
         Request::CreateWorld {
             context,
             name,
@@ -406,7 +432,7 @@ fn call(
 ) -> Reply {
     let api_request = if matches!(
         &operation,
-        Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
+        Operation::ListWorlds | Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
     ) {
         ApiRequest {
             protocol_version: wt_control_protocol::PROTOCOL_VERSION,
@@ -449,6 +475,11 @@ fn call(
         expires_at_unix_ms: response.expires_at_unix_ms,
         outcome: match response.outcome {
             Outcome::Ok { response } => match *response {
+                Response::Worlds { worlds, .. } => ReplyOutcome::Ok {
+                    result: ApiResult::ListWorlds {
+                        worlds: worlds.into_iter().map(Into::into).collect(),
+                    },
+                },
                 Response::World { world } => ReplyOutcome::Ok {
                     result: ApiResult::CreateWorld {
                         world: (*world).into(),
@@ -627,9 +658,7 @@ fn write_response(reply: Reply) -> Result<()> {
             request_id: reply
                 .request_id
                 .context("successful API response is missing its request ID")?,
-            server_id: reply
-                .server_id
-                .context("successful API response is missing its server ID")?,
+            server_id: reply.server_id,
             expires_at_unix_ms: reply.expires_at_unix_ms,
             result,
         },

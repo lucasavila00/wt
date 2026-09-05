@@ -23,7 +23,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
         }
         if !matches!(
             operation,
-            Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
+            Operation::ListWorlds
+                | Operation::ListWorldMail { .. }
+                | Operation::InspectCodex { .. }
         ) {
             return ApiResponse::error(ApiError::new(
                 ErrorCode::InvalidRequest,

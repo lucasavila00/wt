@@ -40,6 +40,19 @@ defmodule WtApiTest do
     assert %Client{executable: "wt", env: []} = Client.new()
   end
 
+  test "discovers local contexts without a server and reports unknown inventory contexts", %{
+    client: client
+  } do
+    assert {:ok, %Success{server_id: nil, result: %Result.ListContexts{contexts: ["ars"]}}} =
+             WtApi.list_contexts(client, %Request.ListContexts{request_id: @request_id})
+
+    assert {:error, %ServerError{code: "unknown_context"}} =
+             WtApi.list_worlds(client, %Request.ListWorlds{
+               request_id: @request_id,
+               context: "missing"
+             })
+  end
+
   test "all v1 operations cross the real wt api binary", %{client: client} do
     assert {:ok,
             %Success{

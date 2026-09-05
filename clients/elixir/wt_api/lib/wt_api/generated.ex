@@ -74,6 +74,98 @@ defmodule WtApi.Generated.Decoder do
   defp decode_value(_value, _type), do: {:error, "unexpected type"}
 end
 
+defmodule WtApi.Request.ListContexts do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:request_id]
+  defstruct api_version: 1, operation: "list_contexts", request_id: nil
+
+  @type t :: %__MODULE__{
+          api_version: number(),
+          operation: String.t(),
+          request_id: String.t()
+        }
+
+  @schema %{
+    api_version: {:required, {:const, 1}},
+    operation: {:required, {:const, "list_contexts"}},
+    request_id: {:required, :uuid}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
+defmodule WtApi.Request.ListWorlds do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:context, :request_id]
+  defstruct api_version: 1,
+            context: nil,
+            expected_server_id: nil,
+            operation: "list_worlds",
+            request_id: nil
+
+  @type t :: %__MODULE__{
+          api_version: number(),
+          context: String.t(),
+          expected_server_id: String.t() | nil,
+          operation: String.t(),
+          request_id: String.t()
+        }
+
+  @schema %{
+    api_version: {:required, {:const, 1}},
+    context: {:required, :string},
+    expected_server_id: {:optional, :uuid},
+    operation: {:required, {:const, "list_worlds"}},
+    request_id: {:required, :uuid}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
+defmodule WtApi.Result.ListContexts do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:contexts]
+  defstruct contexts: nil
+
+  @type t :: %__MODULE__{
+          contexts: [String.t()]
+        }
+
+  @schema %{
+    contexts: {:required, {:list, :string}}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
+defmodule WtApi.Result.ListWorlds do
+  @moduledoc false
+  alias WtApi.Generated.Decoder
+
+  @enforce_keys [:worlds]
+  defstruct worlds: nil
+
+  @type t :: %__MODULE__{
+          worlds: [WtApi.World.t()]
+        }
+
+  @schema %{
+    worlds: {:required, {:list, {:struct, WtApi.World}}}
+  }
+
+  @spec decode(map()) :: {:ok, t()} | {:error, String.t()}
+  def decode(value), do: Decoder.decode_struct(value, __MODULE__, @schema)
+end
+
 defmodule WtApi.Request.CreateWorld do
   @moduledoc false
   alias WtApi.Generated.Decoder
