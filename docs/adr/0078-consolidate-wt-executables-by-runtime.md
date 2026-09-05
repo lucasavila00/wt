@@ -16,7 +16,7 @@ Three compatibility and audience boundaries are real. The user-facing client
 must run without server or guest dependencies. The server links the supported
 libvirt ABI. Guest tools must be static executables that work in golden images.
 External programs also require particular command names: Git discovers a
-remote helper by name, and the Codex wrapper must occupy the `codex` command.
+remote helper by name.
 
 ## Decision
 
@@ -26,21 +26,20 @@ Install three WT executables with distinct names:
 |------------|---------|----------|
 | `wt` | user workstation | client and terminal workspace |
 | `wts` | WT server | control daemon, API bridge, setup, and image management |
-| `wtg` | WT guest | relay, agent tools, and Codex integration |
+| `wtg` | WT guest | relay and agent tools |
 
 `wts` is a GNU executable linked to the server's libvirt ABI. `wtg` is a
 static musl executable baked into each guest image. `wt` remains the
 user-facing client and does not acquire server or guest commands.
 
 Long-running and internal entrypoints are explicit subcommands: `wts serve`,
-`wtg relay`, `wtg tools`, and `wtg codex ...`. Command parsing dispatches
+`wtg relay` and `wtg tools`. Command parsing dispatches
 into typed Rust library code instead of spawning another WT executable.
 
 Install extra guest names only where an external invocation contract requires
 one. They are symlinks to `wtg`, which dispatches by its invoked name:
 
 - `git-remote-wt-agent` for Git's remote-helper discovery; and
-- `codex` at the two supported wrapper locations for Codex prelaunch behavior.
 
 Do not retain the former executable names as general compatibility shims. This
 is an installation contract change deployed as one coherent server and guest

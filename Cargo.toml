@@ -6,7 +6,6 @@ members = [
     "crates/products/wt/control-protocol",
     "crates/products/wt/server",
     "crates/products/wt/guest",
-    "crates/products/wt/codex-integration",
     "crates/products/wt/server-installer",
     "crates/products/agent-tools/gateway",
     "crates/products/agent-tools/tools",

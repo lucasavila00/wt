@@ -26,9 +26,6 @@ fn main() {
 }
 
 fn run(mut args: Vec<OsString>) -> Result<()> {
-    if invoked_as(&args, "codex") {
-        return wt_codex_integration::run(args);
-    }
     if invoked_as(&args, "git-remote-wt-agent") {
         return wt_agent_tool_gateway::git_remote_command::run_from(utf8_args(args.drain(1..))?);
     }
@@ -40,13 +37,8 @@ fn run(mut args: Vec<OsString>) -> Result<()> {
             wt_agent_tool_gateway::relay_command::run_from(args)
         }
         Some("tools") => wt_agent_tool_gateway::tools_command::run(utf8_args(args.drain(2..))?),
-        Some("codex") => {
-            args.remove(1);
-            args[0] = "wtg codex".into();
-            wt_codex_integration::run(args)
-        }
-        Some(other) => bail!("unknown guest command {other:?}; expected relay, tools, or codex"),
-        None => bail!("missing guest command; expected relay, tools, or codex"),
+        Some(other) => bail!("unknown guest command {other:?}; expected relay or tools"),
+        None => bail!("missing guest command; expected relay or tools"),
     }
 }
 

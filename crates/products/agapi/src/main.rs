@@ -89,6 +89,7 @@ fn serve(state: PathBuf, codex: PathBuf, workspace: PathBuf) -> Result<()> {
     );
     // Create private state before starting either socket or child process.
     drop(store::Store::open(&state)?);
+    let state = state.canonicalize()?;
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -96,6 +97,12 @@ fn serve(state: PathBuf, codex: PathBuf, workspace: PathBuf) -> Result<()> {
         .open(state.join("serve.lock"))?;
     lock.try_lock()
         .context("agapi is already serving this state directory")?;
+    if let Ok(existing) = fs::read_to_string(state.join("workspace")) {
+        ensure!(
+            PathBuf::from(existing) == workspace,
+            "state directory belongs to a different workspace"
+        );
+    }
     let socket = state.join("codex.sock");
     if socket.exists() {
         fs::remove_file(&socket)?;

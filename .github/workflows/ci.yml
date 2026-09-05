@@ -44,15 +44,15 @@ jobs:
           mix local.hex --force
           mix deps.get --check-locked
 
-      - name: Install Codex using the guest installer source
+      - name: Install the agapi-supported Codex version
         run: |
-          export CODEX_RELEASE="$(cat .codex-version)"
+          export CODEX_RELEASE="$(cat crates/products/agapi/codex-version)"
           curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
 
       - name: Verify real Codex against a rejecting localhost provider
         run: |
-          WT_CODEX_TEST_BINARY="$HOME/.codex/packages/standalone/current/bin/codex" \
-            cargo test -p wt-codex-integration --locked --test real_codex -- --ignored
+          AGAPI_CODEX_TEST_BINARY="$HOME/.codex/packages/standalone/current/bin/codex" \
+            cargo test -p agapi --locked --test local -- --ignored
 
       - name: Run checks
         run: make ci

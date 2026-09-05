@@ -22,18 +22,6 @@ printf '%s  %s\n' "$BYOBU_COLOR_SHA256" \
     "$WT_HOME/.byobu/color" | sha256sum --check --strict
 test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu")" = "$WT_UID:$WT_GID 755"
 test "$(stat -c '%u:%g %a' "$WT_HOME/.byobu/color")" = "$WT_UID:$WT_GID 644"
-test -x "$WT_HOME/.local/bin/codex"
-test "$(readlink /usr/local/bin/codex)" = \
-    /usr/local/bin/wtg
-test "$(readlink "$WT_HOME/.local/bin/codex")" = \
-    /usr/local/bin/wtg
-test -x "$WT_HOME/.codex/packages/standalone/current/bin/codex"
-test "$(stat -c '%u:%g %a' "$WT_HOME/.local/state/wt")" = \
-    "$WT_UID:$WT_GID 700"
-runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
-    /usr/local/bin/codex --version > /dev/null
-runuser --user "$WT_USER" -- env HOME="$WT_HOME" CODEX_HOME="$WT_HOME/.codex" \
-    "$WT_HOME/.local/bin/codex" --version > /dev/null
 test -f /var/lib/wt-image-development-tools
 runuser --user "$WT_USER" -- env HOME="$WT_HOME" \
     PATH="$WT_HOME/.local/bin:$WT_HOME/.cargo/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin" \

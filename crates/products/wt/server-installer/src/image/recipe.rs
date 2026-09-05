@@ -240,7 +240,7 @@ impl BuildEnvironment<'_> {
         self.git_author_sha256,
         self.agent_tools_sha256,
         self.mount_codex_sha256,
-    ) + &format!("CODEX_RELEASE='{}'\n", include_str!("../../../../../../.codex-version").trim())
+    )
     }
 }
 
@@ -279,7 +279,7 @@ mod tests {
                 agent_tools_sha256: "agent-tools-sha",
                 mount_codex_sha256: "mount-codex-sha",
             }
-            .render().replace(include_str!("../../../../../../.codex-version").trim(), "[codex-version]"),
+            .render(),
             @r###"
 WT_IMAGE_KIND='guest'
 WT_USER='wt'
@@ -301,7 +301,6 @@ ACCESS_SHA256='access-sha'
 GIT_AUTHOR_SHA256='git-author-sha'
 AGENT_TOOLS_SHA256='agent-tools-sha'
 MOUNT_CODEX_SHA256='mount-codex-sha'
-CODEX_RELEASE='[codex-version]'
 "###
         );
     }

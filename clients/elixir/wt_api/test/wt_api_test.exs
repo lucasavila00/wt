@@ -88,51 +88,6 @@ defmodule WtApiTest do
 
     assert {:ok,
             %Success{
-              result: %Result.StartCodex{thread_id: "thread-123", turn_id: "turn-456"}
-            }} =
-             WtApi.start_codex(client, %Request.StartCodex{
-               request_id: @request_id,
-               context: "ars",
-               world_id: @world_id,
-               message: "review this"
-             })
-
-    assert {:ok,
-            %Success{result: %Result.InspectCodex{thread_id: "thread-123", status: "active"}}} =
-             WtApi.inspect_codex(client, %Request.InspectCodex{
-               request_id: @request_id,
-               context: "ars",
-               world_id: @world_id,
-               thread_id: "thread-123"
-             })
-
-    assert {:ok,
-            %Success{result: %Result.InspectCodex{thread_id: "thread-123", status: "active"}}} =
-             WtApi.resume_codex(client, %Request.ResumeCodex{
-               request_id: @request_id,
-               context: "ars",
-               world_id: @world_id,
-               thread_id: "thread-123"
-             })
-
-    assert {:ok,
-            %Success{
-              result: %Result.SendCodexMessage{
-                thread_id: "thread-123",
-                turn_id: "turn-789",
-                delivery: "steered"
-              }
-            }} =
-             WtApi.send_codex_message(client, %Request.SendCodexMessage{
-               request_id: @request_id,
-               context: "ars",
-               world_id: @world_id,
-               thread_id: "thread-123",
-               message: "continue"
-             })
-
-    assert {:ok,
-            %Success{
               result: %Result.ReadWorldMail{
                 messages: [%WtApi.WorldMail{world_id: @world_id, text: "done"}],
                 high_water_message_id: 7
@@ -197,14 +152,6 @@ defmodule WtApiTest do
                disk_gib: 32,
                git_user_name: "Ada Lovelace",
                git_user_email: "ada@example.com"
-             })
-
-    assert {:error, %ProtocolError{message: "WT returned a different thread ID"}} =
-             WtApi.inspect_codex(client, %Request.InspectCodex{
-               request_id: @request_id,
-               context: "ars",
-               world_id: @world_id,
-               thread_id: "different-thread"
              })
 
     assert {:error, %ProtocolError{message: "WT returned a different server ID"}} =
@@ -305,26 +252,17 @@ defmodule WtApiTest do
     esac
     case "$request" in
       *'"name":"capacity"'*)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
+        printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"error","error":{"code":"capacity","message":"world CPU capacity is full","retryable":true,"capacity":{"resource":"cpu","total":4,"reserved":4,"requested":2}}}'
         ;;
       *'"operation":"create_world"'*)
-        printf '%s\n' '{"protocol_version":20,"event":"progress","message":"creating disk"}'
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-4000-8000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"],"future_ssh_field":true},"future_world_field":true}},"future_response_field":true}'
-        ;;
-      *'"operation":"start_codex"'*)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_started","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123"}}'
-        ;;
-      *'"operation":"inspect_codex"'*|*'"operation":"resume_codex"'*)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_inspection","thread_id":"thread-123","status":"active","active_turn_id":"turn-456","pane_id":"%7","window_name":"codex-thread-123","screen":"Codex is working","observed_at_unix_ms":1800000000000}}'
-        ;;
-      *'"operation":"send_codex_message"'*)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"codex_message_sent","thread_id":"thread-123","turn_id":"turn-789","delivery":"steered"}}'
+        printf '%s\n' '{"protocol_version":21,"event":"progress","message":"creating disk"}'
+        printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world","world":{"world_id":"00000000-0000-4000-8000-000000000001","name":"agent-1","owner":"tester","status":"running","vcpus":2,"memory_mib":4096,"disk_gib":32,"guest_ip":"192.0.2.2","ssh":{"user":"wt","host":"192.0.2.2","port":22,"host_keys":["ssh-ed25519 AAAATEST guest"],"future_ssh_field":true},"future_world_field":true}},"future_response_field":true}'
         ;;
       *'"operation":"list_world_mail"'*)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"world_mail","messages":[{"id":7,"world_id":"00000000-0000-4000-8000-000000000001","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","message":"done"}],"high_water_id":7}}'
+        printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","outcome":"ok","response":{"response":"world_mail","messages":[{"id":7,"world_id":"00000000-0000-4000-8000-000000000001","thread_id":"thread-123","turn_id":"turn-456","pane_id":"%7","created_at_unix_ms":1800000000000,"kind":"completed","message":"done"}],"high_water_id":7}}'
         ;;
       *'"operation":"delete_world"'*)
-        printf '%s\n' '{"protocol_version":20,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-4000-8000-000000000001"}}'
+        printf '%s\n' '{"protocol_version":21,"request_id":"11111111-1111-4111-8111-111111111111","server_id":"22222222-2222-4222-8222-222222222222","expires_at_unix_ms":2592000100,"outcome":"ok","response":{"response":"world_deleted","world_id":"00000000-0000-4000-8000-000000000001"}}'
         ;;
       *) exit 2 ;;
     esac

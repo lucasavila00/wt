@@ -4017,23 +4017,7 @@ dependencies = [
  "uuid",
  "vt100",
  "wt-agent-tool-gateway",
- "wt-codex-integration",
  "wt-control-protocol",
-]
-
-[[package]]
-name = "wt-codex-integration"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "insta",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tungstenite",
- "wt-agent-tool-gateway",
 ]
 
 [[package]]

@@ -79,7 +79,12 @@ test-elixir-client: check-elixir-client
 	cd clients/elixir/wt_api && mix deps.get --check-locked
 	cd clients/elixir/wt_api && WT_API_TEST_WT="$(CURDIR)/target/debug/wt" mix test
 
-ci: static test-elixir-client
+test-agapi-client:
+	cargo build -p agapi --locked
+	cd clients/elixir/agapi && mix deps.get --check-locked && mix format --check-formatted
+	cd clients/elixir/agapi && AGAPI_TEST_BINARY="$(CURDIR)/target/debug/agapi" mix test
+
+ci: static test-elixir-client test-agapi-client
 	cargo test --workspace --locked
 
 static: check-crate-readmes check-file-lines check-install-checkout check-snapshot-lines check-typescript

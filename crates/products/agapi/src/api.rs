@@ -14,6 +14,15 @@ pub fn execute(directory: &Path, input: &Value) -> Result<Value> {
     let operation = text(input, "operation")?;
     let mut store = Store::open(directory)?;
     match operation {
+        "describe" => {
+            let _rpc = Connection::open(directory)?;
+            return Ok(json!({
+                "workspace":std::fs::read_to_string(directory.join("workspace"))?,
+                "state_dir":directory.canonicalize()?,
+                "provider":"codex",
+                "version":env!("CARGO_PKG_VERSION")
+            }));
+        }
         "read_events" => {
             let after = input["after"]
                 .as_u64()

@@ -34,8 +34,6 @@ const objectNames = {
 const enumNames = {
   "World.status": "ApiWorldStatus",
   "WorldMail.kind": "ApiMailKind",
-  "InspectCodexResult.status": "ApiCodexStatus",
-  "SendCodexMessageResult.delivery": "ApiCodexMessageDelivery",
   "CapacityDetails.resource": "ApiCapacityResource",
 };
 

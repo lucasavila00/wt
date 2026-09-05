@@ -28,8 +28,6 @@ pub(super) const INSTALL_DEVELOPMENT_TOOLS: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-development-tools.sh");
 const INSTALL_TERMINAL: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-terminal.sh");
-const INSTALL_CODEX: &[u8] =
-    include_bytes!("../../../../../../assets/world/shared/install-codex.sh");
 const INSTALL_DIFFO: &[u8] =
     include_bytes!("../../../../../../assets/world/shared/install-diffo.sh");
 pub(super) const DEVELOPMENT_TOOLS_CACHE_BUILD: &[u8] =
@@ -148,7 +146,6 @@ pub(super) fn run_kvm_build<R: Runner>(
     let install_packages = build_dir.join("install-packages.sh");
     let install_development_tools = build_dir.join("install-development-tools.sh");
     let install_terminal = build_dir.join("install-terminal.sh");
-    let install_codex = build_dir.join("install-codex.sh");
     let install_diffo = build_dir.join("install-diffo.sh");
     let shared_recipe = build_dir.join("shared-build-image.sh");
     let guest_recipe = build_dir.join("guest-build-image.sh");
@@ -219,7 +216,6 @@ pub(super) fn run_kvm_build<R: Runner>(
     fs::write(&install_development_tools, INSTALL_DEVELOPMENT_TOOLS)
         .context("write development tools installer")?;
     fs::write(&install_terminal, INSTALL_TERMINAL).context("write terminal installer")?;
-    fs::write(&install_codex, INSTALL_CODEX).context("write Codex installer")?;
     fs::write(&install_diffo, INSTALL_DIFFO).context("write Diffo installer")?;
     fs::write(&shared_recipe, spec.main_recipe).context("write image recipe")?;
     fs::write(&guest_recipe, spec.guest_recipe).context("write guest image recipe")?;
@@ -250,7 +246,6 @@ pub(super) fn run_kvm_build<R: Runner>(
             install_terminal.as_path(),
             "/var/tmp/wt-install-terminal.sh",
         ),
-        (install_codex.as_path(), "/var/tmp/wt-install-codex.sh"),
         (install_diffo.as_path(), "/var/tmp/wt-install-diffo.sh"),
         (shared_recipe.as_path(), "/var/tmp/wt-image-build.sh"),
         (guest_recipe.as_path(), "/var/tmp/wt-guest-image-build.sh"),

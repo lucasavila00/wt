@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+version="${1:?usage: scripts/install-agapi VERSION}"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version" >&2; exit 1; }
+[[ "$(uname -sm)" == "Linux x86_64" ]] || { echo "Only Linux x86_64 is supported" >&2; exit 1; }
+release_url="https://github.com/lucasavila00/wt/releases/download/agapi-v$version"
+staging=$(mktemp -d)
+trap 'rm -rf -- "$staging"' EXIT
+curl -fL "$release_url/agapi-x86_64-linux.tar.gz" -o "$staging/agapi-x86_64-linux.tar.gz"
+curl -fL "$release_url/SHA256SUMS" -o "$staging/SHA256SUMS"
+(cd "$staging" && sha256sum --check SHA256SUMS)
+tar -xzf "$staging/agapi-x86_64-linux.tar.gz" -C "$staging" agapi codex-version
+CODEX_RELEASE=$(<"$staging/codex-version")
+export CODEX_RELEASE
+curl -fsSL https://chatgpt.com/codex/install.sh -o "$staging/install-codex.sh"
+CODEX_NON_INTERACTIVE=1 sh "$staging/install-codex.sh"
+test "$("$HOME/.codex/packages/standalone/current/bin/codex" --version)" = "codex-cli $CODEX_RELEASE"
+install -d "$HOME/.local/bin"
+install -m 0755 "$staging/agapi" "$HOME/.local/bin/.agapi-new"
+mv -f "$HOME/.local/bin/.agapi-new" "$HOME/.local/bin/agapi"
+echo "Installed agapi $version and Codex $CODEX_RELEASE. Restart agapi serve to use them."

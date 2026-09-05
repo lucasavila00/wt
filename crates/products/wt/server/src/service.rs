@@ -10,7 +10,6 @@ use wt_workload_registry::Resources;
 use wt_workload_registry::{NewWorld, Store, StoreError, StoredWorld};
 mod activity;
 mod api;
-mod codex;
 mod exec;
 mod gateway;
 mod lifecycle;
@@ -95,33 +94,6 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::ExecWorld { world_id, command } => {
                 self.exec_world(owner, world_id, &command)
             }
-            Operation::StartCodex { world_id, message } => {
-                self.start_codex(owner, world_id, &message)
-            }
-            Operation::InspectCodex {
-                world_id,
-                thread_id,
-            } => self.inspect_codex(owner, world_id, &thread_id),
-            Operation::ResumeCodex {
-                world_id,
-                thread_id,
-            } => self.resume_codex(owner, world_id, &thread_id),
-            Operation::SendCodexMessage {
-                world_id,
-                thread_id,
-                message,
-            } => self.send_codex_message(owner, world_id, &thread_id, &message),
-            Operation::SteerCodex {
-                world_id,
-                thread_id,
-                turn_id,
-                message,
-            } => self.control_codex_turn(owner, world_id, &thread_id, &turn_id, Some(&message)),
-            Operation::InterruptCodex {
-                world_id,
-                thread_id,
-                turn_id,
-            } => self.control_codex_turn(owner, world_id, &thread_id, &turn_id, None),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
             operation @ Operation::ListWorldMail { .. } => self.list_world_mail(owner, operation),

@@ -58,7 +58,6 @@ pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::AgentT
             &request.operation,
             wt_control_protocol::Operation::ListWorlds
                 | wt_control_protocol::Operation::ListWorldMail { .. }
-                | wt_control_protocol::Operation::InspectCodex { .. }
                 | wt_control_protocol::Operation::ExecWorld { .. }
         ) {
             return service.execute_api_read(
@@ -108,7 +107,7 @@ mod tests {
         let error = validate_protocol_version(PROTOCOL_VERSION + 1).unwrap_err();
         insta::assert_snapshot!(
             error.message,
-            @"unsupported protocol version 21; expected 20"
+            @"unsupported protocol version 22; expected 21"
         );
     }
 }

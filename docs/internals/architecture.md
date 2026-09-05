@@ -19,15 +19,15 @@ standalone Git client
 
 `wts` owns guests. The control plane has no TCP listener. Local
 and remote API bridges send one versioned JSON request over stdio to the
-protected server socket. The protocol carries world resources, asynchronous
-Codex session operations and mailbox entries, a Git author, server information,
+protected server socket. The protocol carries world resources, generic command execution and mailbox entries, a Git author, server information,
 server-owned terminal-pane observations, and streamed creation progress events.
 
 ## Crates
 
 | Scope | Crates |
 |-------|--------|
-| WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-guest`, `wt-codex-integration`, `wt-server-installer` |
+| WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-guest`, `wt-server-installer` |
+| Agent API | independent `agapi` executable and JSON client |
 | Agent tool gateway | `wt-agent-tool-gateway`, `wtg tools` |
 | Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-installer` |
 | Shared | `wt-libvirt-kvm`, `wt-workload-registry`, `wt-git-smart-protocol`, `wt-installer-support` |
@@ -56,16 +56,12 @@ those observations and keeps each world's complete latest snapshot only in
 memory. No live pane observation is registry state. No Codex hook or lifecycle
 tracker participates in live state.
 
-Each world uses one systemd-supervised Codex App Server on a guest-local Unix WebSocket. WT runs the native Codex TUI with
-`--remote` in a dedicated window of the world's shared Byobu session for each delegated thread.
-App Server owns live thread and turn state, and a tmux pane option associates each visible TUI with
-its thread. Start, inspect, and send work independently of terminal availability. A supervised
-worker durably tracks threads before submission, reconciles stored turns, and retries terminal
-delivery. The registry deduplicates completions by world/thread/turn.
-After a guest restart, `resume_codex` reopens a persisted thread's missing visible window and
-resumes its history without submitting a message. Send remains separate; resume does not create a
-replacement thread or restore the interrupted turn. A retained unfinished turn with no loaded
-runtime receives an explicit WT recovery failure, never automatic prompt replay. See ADR 0086.
+Agent execution belongs to the independent agapi product. WT transports bounded command
+requests to a running guest without interpreting them. Controllers may instead run agapi
+directly in a local workspace. agapi owns provider adaptation, process supervision,
+durable request receipts, and result cursors. Its separate installer and releases update
+existing environments without rebuilding worlds. See ADR 0086 and
+[agapi](../../crates/products/agapi/README.md).
 
 ## Shell playback
 
@@ -109,6 +105,4 @@ Each registry record is a guest with its resources, backend, disk, and SSH
 endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
 that domain's name. Parent messages use this world identity and contain no
-window or process attribution. Terminal Codex results use the same mailbox and carry a versioned
-delivery payload that controllers can correlate with the Codex thread and turn. App Server and
-Byobu own the live execution and presentation state.
+window or process attribution. Agent terminal results are persisted by agapi and imported by its controller, not sent through the WT mailbox.
