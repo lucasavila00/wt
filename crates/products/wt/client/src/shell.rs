@@ -68,6 +68,9 @@ pub fn run(config: &ClientConfig, test_server: bool) -> Result<()> {
     let (session_rows, session_columns) = session_viewport(&model, area);
     let mut sessions = SessionSet::start(model.worlds(), session_rows, session_columns)?;
     model.control_mut().set_capacity(report.capacity);
+    model
+        .control_mut()
+        .set_capacities(report.capacity_by_context);
     model.set_test_server(test_server);
     model.finish_worlds_refresh(Ok(refresh::updated_at()));
     let refresh = WorldRefresh::start(config.clone());
@@ -198,6 +201,7 @@ fn run_loop(
                     sessions.reconcile(&worlds, rows, columns)?;
                     model.reconcile_worlds(worlds);
                     model.control_mut().set_capacity(snapshot.capacity);
+                    model.control_mut().set_capacities(snapshot.capacities);
                     model.finish_worlds_refresh(Ok(refresh::updated_at()));
                     redraw = true;
                 }
@@ -595,7 +599,12 @@ fn start_creation(
             return;
         }
     };
-    match crate::create::prepare_with_author(config, author, &used_names) {
+    match crate::create::prepare_with_author(
+        config,
+        author,
+        &used_names,
+        model.control().capacities().clone(),
+    ) {
         Ok(flow) => {
             flows.creation = Some(flow);
             flows.action_error = None;

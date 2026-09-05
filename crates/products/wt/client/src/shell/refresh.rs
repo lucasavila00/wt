@@ -20,6 +20,8 @@ pub(super) struct WorldSnapshot {
     pub(super) generation: u64,
     pub(super) worlds: Vec<inventory::ContextWorld>,
     pub(super) capacity: wt_control_protocol::ResourceCapacity,
+    pub(super) capacities:
+        std::collections::BTreeMap<String, wt_control_protocol::ResourceCapacity>,
     pub(super) failures: Vec<String>,
     pub(super) ssh_sync_error: Option<String>,
 }
@@ -89,6 +91,7 @@ impl WorldRefresh {
                     generation,
                     worlds: report.worlds,
                     capacity: report.capacity,
+                    capacities: report.capacity_by_context,
                     failures,
                     ssh_sync_error,
                 }) {

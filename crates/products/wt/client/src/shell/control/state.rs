@@ -8,6 +8,7 @@ use super::{
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
+use std::collections::BTreeMap;
 use wt_control_protocol::ResourceCapacity;
 
 #[derive(Debug)]
@@ -23,6 +24,7 @@ pub(in crate::shell) struct ControlState {
     worlds_refresh: RefreshStatus,
     pane_refresh: RefreshStatus,
     capacity: ResourceCapacity,
+    capacities: BTreeMap<String, ResourceCapacity>,
 }
 
 impl Default for ControlState {
@@ -39,6 +41,7 @@ impl Default for ControlState {
             worlds_refresh: RefreshStatus::default(),
             pane_refresh: RefreshStatus::default(),
             capacity: Default::default(),
+            capacities: Default::default(),
         }
     }
 }
@@ -50,6 +53,17 @@ impl ControlState {
 
     pub(in crate::shell) fn set_capacity(&mut self, capacity: ResourceCapacity) {
         self.capacity = capacity;
+    }
+
+    pub(in crate::shell) fn capacities(&self) -> &BTreeMap<String, ResourceCapacity> {
+        &self.capacities
+    }
+
+    pub(in crate::shell) fn set_capacities(
+        &mut self,
+        capacities: BTreeMap<String, ResourceCapacity>,
+    ) {
+        self.capacities = capacities;
     }
 
     pub(in crate::shell) fn show_worlds(&mut self) {
