@@ -72,6 +72,22 @@ fn guest_lifecycle() {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     assert_terminal_stack(&harness, &name);
+    run_guest(
+        &harness,
+        &name,
+        r#"set -eu
+pane_id=$(tmux new-window -d -P -F '#{pane_id}' -t wt-host -n focus-test 'exec codex')
+trap 'tmux kill-window -t "$pane_id"' EXIT
+attempts=0
+while test "$(tmux display-message -p -t "$pane_id" '#{pane_current_command}:#{pane_dead}')" != codex:0; do
+    attempts=$((attempts + 1))
+    test "$attempts" -lt 100
+    sleep 0.1
+done
+test "$(wtg codex focus-pane wt-host "$pane_id")" = "wt-host:$pane_id"
+test "$(tmux display-message -p -t wt-host '#{pane_id}')" = "$pane_id""#,
+        "focus an observed Codex pane",
+    );
     let _ = byobu.kill();
     let _ = byobu.wait();
 
