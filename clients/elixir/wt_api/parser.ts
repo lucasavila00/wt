@@ -2,6 +2,8 @@ import parse from "./generated/parser.js";
 import type * as Api from "./api.js";
 
 export const Codecs = parse.buildParsers<{
+  ExecWorldRequest: Api.ExecWorldRequest;
+  ExecWorldResult: Api.ExecWorldResult;
   Request: Api.Request;
   Response: Api.Response;
   CreateWorldRequest: Api.CreateWorldRequest;

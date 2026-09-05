@@ -59,6 +59,7 @@ pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::AgentT
             wt_control_protocol::Operation::ListWorlds
                 | wt_control_protocol::Operation::ListWorldMail { .. }
                 | wt_control_protocol::Operation::InspectCodex { .. }
+                | wt_control_protocol::Operation::ExecWorld { .. }
         ) {
             return service.execute_api_read(
                 owner,

@@ -128,6 +128,39 @@ impl<P: MachineProvider> Worker<P> {
 }
 
 impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
+    fn exec_world(
+        &self,
+        world_id: WorldId,
+        command: &wt_control_protocol::ExecCommand,
+    ) -> Result<wt_control_protocol::ExecOutput, WorkerError> {
+        let machine = match self.provider.inspect(world_id)? {
+            MachineInspection::Running(machine) => machine,
+            _ => return Err(WorkerError::new("world is not running")),
+        };
+        let mut args = vec![
+            "-H",
+            "-u",
+            crate::GUEST_USER,
+            "--",
+            command.executable.as_str(),
+        ];
+        args.extend(command.args.iter().map(String::as_str));
+        let output = machine.transport.capture(&CaptureRequest {
+            executable: "/usr/bin/sudo",
+            args: &args,
+            stdin: Some(command.stdin.as_bytes()),
+            deadline: Instant::now() + Duration::from_secs(60),
+            stdout_limit: 16 * 1024 * 1024,
+            stderr_limit: 16 * 1024 * 1024,
+        })?;
+        Ok(wt_control_protocol::ExecOutput {
+            stdout: String::from_utf8(output.stdout)
+                .map_err(|_| WorkerError::new("command stdout is not UTF-8"))?,
+            stderr: String::from_utf8(output.stderr)
+                .map_err(|_| WorkerError::new("command stderr is not UTF-8"))?,
+            exit_status: output.exit_code,
+        })
+    }
     fn control_codex_turn(
         &self,
         world_id: WorldId,

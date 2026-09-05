@@ -116,6 +116,58 @@
       ],
       "additionalProperties": false
     },
+    "ExecWorldRequest": {
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "type": "number",
+          "enum": [
+            1
+          ]
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "context": {
+          "type": "string"
+        },
+        "executable": {
+          "type": "string"
+        },
+        "expected_server_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "exec_world"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "stdin": {
+          "type": "string"
+        },
+        "world_id": {
+          "$ref": "#/$defs/Uuid"
+        }
+      },
+      "required": [
+        "api_version",
+        "args",
+        "context",
+        "executable",
+        "operation",
+        "request_id",
+        "stdin",
+        "world_id"
+      ],
+      "additionalProperties": false
+    },
     "InspectCodexRequest": {
       "type": "object",
       "properties": {
@@ -489,6 +541,7 @@
         "mapping": {
           "create_world": "#/$defs/CreateWorldRequest",
           "delete_world": "#/$defs/DeleteWorldRequest",
+          "exec_world": "#/$defs/ExecWorldRequest",
           "inspect_codex": "#/$defs/InspectCodexRequest",
           "interrupt_codex": "#/$defs/InterruptCodexRequest",
           "list_contexts": "#/$defs/ListContextsRequest",
@@ -506,6 +559,9 @@
         },
         {
           "$ref": "#/$defs/DeleteWorldRequest"
+        },
+        {
+          "$ref": "#/$defs/ExecWorldRequest"
         },
         {
           "$ref": "#/$defs/InspectCodexRequest"
@@ -737,6 +793,26 @@
       ],
       "additionalProperties": false
     },
+    "ExecWorldResult": {
+      "type": "object",
+      "properties": {
+        "exit_status": {
+          "$ref": "#/$defs/Int64"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "exit_status",
+        "stderr",
+        "stdout"
+      ],
+      "additionalProperties": false
+    },
     "InspectCodexResult": {
       "type": "object",
       "properties": {
@@ -919,6 +995,9 @@
         },
         {
           "$ref": "#/$defs/DeleteWorldResult"
+        },
+        {
+          "$ref": "#/$defs/ExecWorldResult"
         },
         {
           "$ref": "#/$defs/InspectCodexResult"

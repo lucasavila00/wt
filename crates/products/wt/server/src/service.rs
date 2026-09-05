@@ -11,6 +11,7 @@ use wt_workload_registry::{NewWorld, Store, StoreError, StoredWorld};
 mod activity;
 mod api;
 mod codex;
+mod exec;
 mod gateway;
 mod lifecycle;
 mod mail;
@@ -91,6 +92,9 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::StartWorld { world_id } => self.start(owner, world_id),
             Operation::StopWorld { world_id } => self.stop(owner, world_id),
             Operation::DeleteWorld { world_id } => self.delete(owner, world_id),
+            Operation::ExecWorld { world_id, command } => {
+                self.exec_world(owner, world_id, &command)
+            }
             Operation::StartCodex { world_id, message } => {
                 self.start_codex(owner, world_id, &message)
             }

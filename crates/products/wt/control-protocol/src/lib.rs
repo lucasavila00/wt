@@ -4,6 +4,7 @@ mod activity;
 mod capacity;
 mod codex;
 mod create;
+mod exec;
 mod mail;
 mod pane;
 #[cfg(test)]
@@ -17,6 +18,7 @@ pub use activity::{
 pub use capacity::{Capacity, CapacityResource};
 pub use codex::{CodexMessageDelivery, CodexStatus};
 pub use create::{validate_create_world_resources, CreateWorld};
+pub use exec::{ExecCommand, ExecOutput};
 pub use mail::{MailKind, WorldMail, MAX_MAIL_TEXT_BYTES, MAX_WORLD_MAIL_PAGE_SIZE};
 pub use pane::{
     PaneCell, PaneColor, PaneFrame, PaneObservation, PaneRender, MAX_PANE_CELL_TEXT_BYTES,
@@ -127,6 +129,7 @@ impl ApiRequest {
 #[serde(tag = "operation", rename_all = "snake_case")]
 #[rustfmt::skip]
 pub enum Operation {
+    ExecWorld { world_id: WorldId, command: ExecCommand },
     ServerInfo,
     CreateWorld(CreateWorld),
     ListWorlds,
@@ -218,6 +221,9 @@ pub enum Outcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "response", rename_all = "snake_case")]
 pub enum Response {
+    WorldExecuted {
+        output: ExecOutput,
+    },
     ServerInfo {
         test_server: bool,
         build: BuildIdentity,

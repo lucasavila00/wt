@@ -34,6 +34,13 @@ fn write_creation_timing(
 }
 
 pub trait WorldWorker: Clone + Send + Sync + 'static {
+    fn exec_world(
+        &self,
+        _world_id: WorldId,
+        _command: &wt_control_protocol::ExecCommand,
+    ) -> Result<wt_control_protocol::ExecOutput, WorkerError> {
+        Err(WorkerError::new("command transport is unavailable"))
+    }
     fn start_codex(&self, _world_id: WorldId, _message: &str) -> Result<CodexStart, WorkerError> {
         Err(WorkerError::new("Codex is not supported by this worker"))
     }

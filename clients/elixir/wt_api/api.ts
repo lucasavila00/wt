@@ -6,6 +6,24 @@ export type UInt16 = NumberFormat<"UInt16">;
 export type UInt32 = NumberFormat<"UInt32">;
 export type UInt64 = NumberFormat<"UInt64">;
 
+export type ExecWorldRequest = {
+  api_version: 1;
+  request_id: Uuid;
+  expected_server_id?: Uuid;
+  context: string;
+  operation: "exec_world";
+  world_id: Uuid;
+  executable: string;
+  args: string[];
+  stdin: string;
+};
+
+export type ExecWorldResult = {
+  stdout: string;
+  stderr: string;
+  exit_status: Int64;
+};
+
 export type ListContextsRequest = {
   api_version: 1;
   request_id: Uuid;
@@ -119,6 +137,7 @@ export type InterruptCodexRequest = {
 };
 
 export type Request =
+  | ExecWorldRequest
   | ListContextsRequest
   | ListWorldsRequest
   | CreateWorldRequest
@@ -195,6 +214,7 @@ export type ReadWorldMailResult = {
 };
 
 export type Result =
+  | ExecWorldResult
   | ListContextsResult
   | ListWorldsResult
   | CreateWorldResult

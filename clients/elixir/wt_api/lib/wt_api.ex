@@ -7,6 +7,12 @@ defmodule WtApi do
 
   @type error :: TransportError.t() | ProtocolError.t() | ServerError.t()
 
+  @doc "Execute a bounded UTF-8 command once, without shell interpolation or replay."
+  def exec_world(request), do: exec_world(Client.new(), request)
+
+  def exec_world(client, %Request.ExecWorld{} = request),
+    do: call(client, request, Result.ExecWorld, fn _result -> :ok end)
+
   @doc "List configured context names without contacting a server."
   def list_contexts(request), do: list_contexts(Client.new(), request)
 
@@ -155,6 +161,9 @@ defmodule WtApi do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new(fn {key, value} -> {Atom.to_string(key), value} end)
   end
+
+  defp execute(%Client{transport: transport}, input) when is_function(transport, 1),
+    do: transport.(input)
 
   defp execute(%Client{} = client, input) do
     try do

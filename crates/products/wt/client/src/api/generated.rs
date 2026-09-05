@@ -28,6 +28,18 @@ pub(super) enum Request {
         request_id: String,
         world_id: String,
     },
+    #[serde(rename = "exec_world")]
+    ExecWorld {
+        api_version: u32,
+        args: Vec<String>,
+        context: String,
+        executable: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_server_id: Option<String>,
+        request_id: String,
+        stdin: String,
+        world_id: String,
+    },
     #[serde(rename = "inspect_codex")]
     InspectCodex {
         api_version: u32,
@@ -152,6 +164,11 @@ pub(super) enum ApiResult {
     },
     DeleteWorld {
         world_id: String,
+    },
+    ExecWorld {
+        exit_status: i64,
+        stderr: String,
+        stdout: String,
     },
     InspectCodex {
         #[serde(default, skip_serializing_if = "Option::is_none")]

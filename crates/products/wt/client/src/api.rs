@@ -19,6 +19,7 @@ impl Request {
     fn api_version(&self) -> u32 {
         match self {
             Self::ListContexts { api_version, .. }
+            | Self::ExecWorld { api_version, .. }
             | Self::ListWorlds { api_version, .. }
             | Self::CreateWorld { api_version, .. }
             | Self::DeleteWorld { api_version, .. }
@@ -35,6 +36,7 @@ impl Request {
     fn request_id(&self) -> &str {
         match self {
             Self::ListContexts { request_id, .. }
+            | Self::ExecWorld { request_id, .. }
             | Self::ListWorlds { request_id, .. }
             | Self::CreateWorld { request_id, .. }
             | Self::DeleteWorld { request_id, .. }
@@ -52,6 +54,9 @@ impl Request {
         match self {
             Self::ListContexts { .. } => None,
             Self::ListWorlds {
+                expected_server_id, ..
+            }
+            | Self::ExecWorld {
                 expected_server_id, ..
             }
             | Self::CreateWorld {
@@ -275,6 +280,26 @@ fn operation_hash(operation: &Operation) -> String {
 
 fn request_to_operation(request: Request) -> std::result::Result<(String, Operation), String> {
     match request {
+        Request::ExecWorld {
+            context,
+            world_id,
+            executable,
+            args,
+            stdin,
+            ..
+        } => Ok((
+            context,
+            Operation::ExecWorld {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                command: wt_control_protocol::ExecCommand {
+                    executable,
+                    args,
+                    stdin,
+                },
+            },
+        )),
         Request::ListContexts { .. } => Err("list_contexts is a client-local operation".to_owned()),
         Request::ListWorlds { context, .. } => Ok((context, Operation::ListWorlds)),
         Request::CreateWorld {
@@ -432,7 +457,10 @@ fn call(
 ) -> Reply {
     let api_request = if matches!(
         &operation,
-        Operation::ListWorlds | Operation::ListWorldMail { .. } | Operation::InspectCodex { .. }
+        Operation::ListWorlds
+            | Operation::ListWorldMail { .. }
+            | Operation::InspectCodex { .. }
+            | Operation::ExecWorld { .. }
     ) {
         ApiRequest {
             protocol_version: wt_control_protocol::PROTOCOL_VERSION,
@@ -475,6 +503,13 @@ fn call(
         expires_at_unix_ms: response.expires_at_unix_ms,
         outcome: match response.outcome {
             Outcome::Ok { response } => match *response {
+                Response::WorldExecuted { output } => ReplyOutcome::Ok {
+                    result: ApiResult::ExecWorld {
+                        stdout: output.stdout,
+                        stderr: output.stderr,
+                        exit_status: i64::from(output.exit_status),
+                    },
+                },
                 Response::Worlds { worlds, .. } => ReplyOutcome::Ok {
                     result: ApiResult::ListWorlds {
                         worlds: worlds.into_iter().map(Into::into).collect(),
