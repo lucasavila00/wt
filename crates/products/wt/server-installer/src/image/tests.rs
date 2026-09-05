@@ -162,7 +162,6 @@ fn guest_image_owns_static_guest_binaries() {
 
     insta::assert_snapshot!(inputs, @r###"
     wtg	/var/tmp/wtg
-    agapi	/var/tmp/agapi
     "###);
 }
 

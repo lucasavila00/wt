@@ -13,8 +13,7 @@ The installer prepares libvirt, capacity state, the agent tool gateway, and a
 verified guest golden image. Every image contains Git, OpenSSH, QEMU
 guest support, Byobu, tmux, Diffo, WT's guest helpers, current Rust/Cargo,
 Go, Python/uv, Node.js/nvm, build tools, CLI utilities including ShellCheck,
-Docker with Compose, the interactive Codex CLI, and agapi with its matching
-private Codex binary.
+Docker with Compose, and the interactive Codex CLI.
 
 Golden-image rebuilds reuse a verified local development-tools cache and refresh
 WT's guest binaries instead of reinstalling language toolchains. Changing the
@@ -40,20 +39,9 @@ for unrestricted execution inside the guest and the WT world-context hook. Users
 can edit that configuration in their world. Rebuild the image to change the
 preinstalled CLI; existing worlds retain their installed version.
 
-New images include the standalone [agapi runtime](../../crates/products/agapi/README.md),
-built from the image's checkout, and its matching Codex binary under
-`~/.local/share/agapi/codex`, separately from the interactive CLI. Start it when
-needed, choosing a workspace and state directory:
-
-```sh
-agapi --state-dir "$HOME/.local/state/agapi/my-project" serve \
-  --workspace /absolute/workspace \
-  --codex "$HOME/.local/share/agapi/codex/bin/codex"
-```
-
-Supervise `agapi serve` independently of WT. It does not start automatically.
-Use `scripts/install-agapi VERSION` to update the pair inside an existing world;
-the user-local command takes precedence over the image's original binary.
+Controllers install and supervise their agent runtimes through `exec_world`.
+Long-running installation jobs and services must use a guest process supervisor;
+each execution request has a 60-second deadline.
 
 Codex authentication is shared read-only. Each world receives a read-write
 mount of only its own server-backed sessions directory; user configuration,

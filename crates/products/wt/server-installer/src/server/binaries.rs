@@ -42,22 +42,6 @@ pub(super) fn build_static(runner: &impl Runner) -> Result<()> {
         "build static wtg",
     )?;
     validate_static_binary(runner, &guest_binary("wtg"), "wtg")?;
-    runner.run(
-        cmd!(
-            "cargo",
-            "build",
-            "--quiet",
-            "--release",
-            "--target",
-            MUSL_TARGET,
-            "-p",
-            "agapi",
-            "--bin",
-            "agapi",
-        ),
-        "build static agapi",
-    )?;
-    validate_static_binary(runner, &guest_binary("agapi"), "agapi")?;
     Ok(())
 }
 
@@ -127,10 +111,6 @@ mod tests {
         assert_eq!(
             guest_binary("wtg"),
             Path::new("target/x86_64-unknown-linux-musl/release/wtg")
-        );
-        assert_eq!(
-            guest_binary("agapi"),
-            Path::new("target/x86_64-unknown-linux-musl/release/agapi")
         );
         assert_eq!(server_binary(), Path::new("target/release/wts"));
     }

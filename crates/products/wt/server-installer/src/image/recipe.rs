@@ -241,9 +241,8 @@ impl BuildEnvironment<'_> {
         self.agent_tools_sha256,
         self.mount_codex_sha256,
     ) + &format!(
-        "CODEX_RELEASE='{}'\nAGAPI_CODEX_RELEASE='{}'\n",
+        "CODEX_RELEASE='{}'\n",
         include_str!("../../../../../../assets/world/guest/codex-version").trim(),
-        include_str!("../../../../agapi/codex-version").trim(),
     )
     }
 }
@@ -284,10 +283,6 @@ mod tests {
                 mount_codex_sha256: "mount-codex-sha",
             }
             .render()
-            .replace(
-                &format!("AGAPI_CODEX_RELEASE='{}'", include_str!("../../../../agapi/codex-version").trim()),
-                "AGAPI_CODEX_RELEASE='[agapi-codex-version]'",
-            )
             .replace(include_str!("../../../../../../assets/world/guest/codex-version").trim(), "[codex-version]"),
             @r###"
 WT_IMAGE_KIND='guest'
@@ -311,7 +306,6 @@ GIT_AUTHOR_SHA256='git-author-sha'
 AGENT_TOOLS_SHA256='agent-tools-sha'
 MOUNT_CODEX_SHA256='mount-codex-sha'
 CODEX_RELEASE='[codex-version]'
-AGAPI_CODEX_RELEASE='[agapi-codex-version]'
 "###
         );
     }

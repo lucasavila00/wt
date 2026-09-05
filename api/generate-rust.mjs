@@ -1,11 +1,18 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { SchemaPrintingContext } from "@beff/client";
+import { Codecs } from "./parser.ts";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const schema = JSON.parse(readFileSync(join(root, "wt_api.schema.json"), "utf8"));
-const definitions = schema.$defs;
+const context = new SchemaPrintingContext({
+  refPathTemplate: "#/$defs/{name}",
+  definitionContainerKey: "$defs",
+});
+Codecs.Request.schemaWithContext(context);
+Codecs.Response.schemaWithContext(context);
+const definitions = context.exportDefinitions().$defs;
 
 const refName = (value) => value.replace("#/$defs/", "");
 const pascal = (value) =>
@@ -152,7 +159,7 @@ ${emitFields(fields(source), "pub(super) ")}
 `,
 );
 
-const output = `// Generated from clients/elixir/wt_api/wt_api.schema.json. Do not edit.
+const output = `// Generated from api/api.ts. Do not edit.
 
 use serde::{Deserialize, Serialize};
 
@@ -162,7 +169,7 @@ ${result}
 ${enumDefinitions.join("\n")}
 ${structs.join("\n")}`;
 
-const destination = join(root, "../../../crates/products/wt/client/src/api/generated.rs");
+const destination = join(root, "../crates/products/wt/client/src/api/generated.rs");
 writeFileSync(destination, output);
 const formatted = spawnSync("rustfmt", ["--edition", "2021", destination], { encoding: "utf8" });
 if (formatted.status !== 0) {

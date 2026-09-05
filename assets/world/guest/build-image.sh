@@ -9,8 +9,6 @@ set -eu
 install -m 0755 /var/tmp/wt-guest-shell /usr/local/bin/wt-guest-shell
 install -m 0755 /var/tmp/wt-guest-prepare /usr/local/libexec/wt-guest-prepare
 install -m 0755 /var/tmp/wtg /usr/local/bin/wtg
-install -m 0755 /var/tmp/agapi /usr/local/bin/agapi
-runuser --user "$WT_USER" -- ln -sfn /usr/local/bin/agapi "$WT_HOME/.local/bin/agapi"
 ln -s /usr/local/bin/wtg /usr/local/bin/git-remote-wt-agent
 install -d -m 0755 /etc/codex
 install -m 0644 /var/tmp/wt-codex-requirements.toml \

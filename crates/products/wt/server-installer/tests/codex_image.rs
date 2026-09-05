@@ -9,7 +9,7 @@ fn executable(path: &Path, contents: &str) {
 }
 
 #[test]
-fn image_installs_independent_codex_versions_without_replacing_user_state() {
+fn image_installs_interactive_codex_without_replacing_user_state() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     let home = root.join("home");
@@ -22,7 +22,7 @@ fn image_installs_independent_codex_versions_without_replacing_user_state() {
     fs::write(
         root.join("wt-image-build.env"),
         format!(
-            "WT_USER=wt\nWT_HOME='{}'\nCODEX_RELEASE=1.2.3\nAGAPI_CODEX_RELEASE=4.5.6\n",
+            "WT_USER=wt\nWT_HOME='{}'\nCODEX_RELEASE=1.2.3\n",
             home.display()
         ),
     )
@@ -59,17 +59,15 @@ printf '%s\n' "$CODEX_RELEASE" > "$HOME/.profile"
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for (path, version) in [
-        (bin.join("codex"), "1.2.3"),
-        (home.join(".local/share/agapi/codex/bin/codex"), "4.5.6"),
-    ] {
-        let output = Command::new(path).arg("--version").output().unwrap();
-        assert!(output.status.success());
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap(),
-            format!("codex-cli {version}\n")
-        );
-    }
+    let output = Command::new(bin.join("codex"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "codex-cli 1.2.3\n"
+    );
     assert_eq!(
         fs::read_to_string(home.join(".profile")).unwrap(),
         "1.2.3\n"

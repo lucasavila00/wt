@@ -1,11 +1,12 @@
 # ADR 0085: Expose a stable JSON client API
 
 The wt api command exchanges one versioned UTF-8 JSON request and response over
-stdio. Diagnostics use stderr. The typed Elixir client accepts an injected transport;
-its default starts wt api. TypeScript/Beff defines the generated contract.
+stdio. Diagnostics use stderr. `api/api.ts` defines the public contract and generates
+WT's Rust wire types. Consumers clone WT at a pinned commit and own their language
+clients, schema generation, and validation.
 
 Operations list contexts/worlds, create/delete worlds, read world mail, and execute
-generic commands. Agent semantics belong to agapi (ADR 0086).
+generic commands. Controllers own agent semantics (ADR 0086).
 
 Every request has a UUID. Responses echo it and identify the server; expected_server_id
 binds requests to a known server. Contexts resolve to local or SSH transports.

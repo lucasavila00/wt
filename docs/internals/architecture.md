@@ -27,7 +27,6 @@ server-owned terminal-pane observations, and streamed creation progress events.
 | Scope | Crates |
 |-------|--------|
 | WT | `wt-client`, `wt-control-protocol`, `wt-server`, `wt-guest`, `wt-server-installer` |
-| Agent API | independent `agapi` executable and JSON client |
 | Agent tool gateway | `wt-agent-tool-gateway`, `wtg tools` |
 | Standalone Git proxy | `wt-git-proxy`, `wt-git-proxy-installer` |
 | Shared | `wt-libvirt-kvm`, `wt-workload-registry`, `wt-git-smart-protocol`, `wt-installer-support` |
@@ -56,12 +55,14 @@ those observations and keeps each world's complete latest snapshot only in
 memory. No live pane observation is registry state. No Codex hook or lifecycle
 tracker participates in live state.
 
-Agent execution belongs to the independent agapi product. WT transports bounded command
-requests to a running guest without interpreting them. Controllers may instead run agapi
-directly in a local workspace. agapi owns provider adaptation, process supervision,
-durable request receipts, and result cursors. Its separate installer and releases update
-existing environments without rebuilding worlds. See ADR 0086 and
-[agapi](../../crates/products/agapi/README.md).
+WT transports bounded command requests to a running guest without interpreting them.
+Controllers own agent runtime installation, supervision, provider adaptation, and
+durable results. They can use `exec_world` to install and start a supervised service
+inside a world. See ADR 0086.
+
+The public contract is [api/api.ts](../../api/api.ts). WT generates its Rust wire
+types from this TypeScript definition. Consumers clone a pinned WT revision and
+own their client generation and any JSON Schemas they need.
 
 ## Shell playback
 
@@ -88,10 +89,8 @@ The installer builds one development-tools image. It owns current language
 toolchains, build and CLI tools, and Docker/Compose with recorded resolved
 versions. This is not a runtime world setting.
 It also installs the interactive Codex CLI and initial user configuration,
-plus a separately built static agapi executable and its matching private Codex
-binary. agapi is available on PATH but is not started by WT. Its standalone
-installer can update the pair inside existing worlds. Both Codex installations
-use the guest's existing auth and session mounts at runtime.
+and the guest's auth and session mounts. Agent runtimes are installed and
+supervised by their controllers through the generic execution API.
 
 Provisioning is intentionally restart-only. WT does not resume an interrupted
 sequence or repair partial guest state. Remove a failed world and create it
@@ -110,4 +109,5 @@ Each registry record is a guest with its resources, backend, disk, and SSH
 endpoint. Agent-tool requests are scoped by resolving the accepted vsock peer
 CID to a currently active WT libvirt domain and deriving the world UUID from
 that domain's name. Parent messages use this world identity and contain no
-window or process attribution. Agent terminal results are persisted by agapi and imported by its controller, not sent through the WT mailbox.
+window or process attribution. Controllers own agent terminal results; these are
+not sent through the WT mailbox.
