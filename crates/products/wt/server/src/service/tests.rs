@@ -145,6 +145,38 @@ fn test_service(store: Store) -> Service<UnusedWorker, UnusedGateway> {
 }
 
 #[test]
+fn world_inventory_is_an_identified_read_without_a_mutation_hash() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = Store::open(&temp.path().join("instances.db")).unwrap();
+    let server_id = store.server_id().unwrap();
+    let service = test_service(store);
+    let request_id = uuid::Uuid::new_v4();
+    let request = |expected_server_id| wt_control_protocol::ApiRequest {
+        protocol_version: wt_control_protocol::PROTOCOL_VERSION,
+        request_id: Some(request_id),
+        request_hash: None,
+        expected_server_id,
+        operation: Operation::ListWorlds,
+    };
+
+    for _ in 0..2 {
+        let response = crate::handle_request(&service, "owner", request(Some(server_id)));
+        assert_eq!(response.request_id, Some(request_id));
+        assert_eq!(response.server_id, Some(server_id));
+        assert_eq!(response.expires_at_unix_ms, None);
+        let Outcome::Ok { response } = response.outcome else {
+            panic!("inventory read failed");
+        };
+        assert!(matches!(*response, Response::Worlds { worlds, .. } if worlds.is_empty()));
+    }
+
+    let mismatch = crate::handle_request(&service, "owner", request(Some(uuid::Uuid::new_v4())));
+    assert!(
+        matches!(mismatch.outcome, Outcome::Error { error } if error.code == ErrorCode::ServerMismatch)
+    );
+}
+
+#[test]
 fn api_delete_replays_after_restart_and_rejects_changed_content() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("instances.db");

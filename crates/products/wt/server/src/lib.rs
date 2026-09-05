@@ -56,7 +56,8 @@ pub fn handle_request_with_progress<W: wt_guest::WorldWorker, G: service::AgentT
     if let Some(request_id) = request.request_id {
         if matches!(
             &request.operation,
-            wt_control_protocol::Operation::ListWorldMail { .. }
+            wt_control_protocol::Operation::ListWorlds
+                | wt_control_protocol::Operation::ListWorldMail { .. }
                 | wt_control_protocol::Operation::InspectCodex { .. }
         ) {
             return service.execute_api_read(
