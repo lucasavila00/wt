@@ -107,6 +107,17 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 thread_id,
                 message,
             } => self.send_codex_message(owner, world_id, &thread_id, &message),
+            Operation::SteerCodex {
+                world_id,
+                thread_id,
+                turn_id,
+                message,
+            } => self.control_codex_turn(owner, world_id, &thread_id, &turn_id, Some(&message)),
+            Operation::InterruptCodex {
+                world_id,
+                thread_id,
+                turn_id,
+            } => self.control_codex_turn(owner, world_id, &thread_id, &turn_id, None),
             Operation::ListAgentToolReports => self.list_agent_tool_reports(owner),
             Operation::ClearAgentToolReports => self.clear_agent_tool_reports(owner),
             operation @ Operation::ListWorldMail { .. } => self.list_world_mail(owner, operation),

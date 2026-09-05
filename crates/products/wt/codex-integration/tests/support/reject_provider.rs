@@ -10,6 +10,7 @@ pub struct RejectProvider {
     pub address: std::net::SocketAddr,
     requests: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
+    hold: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -21,6 +22,8 @@ impl RejectProvider {
         let seen = requests.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
+        let hold = Arc::new(AtomicBool::new(false));
+        let holding = hold.clone();
         let worker = std::thread::spawn(move || {
             for stream in listener.incoming() {
                 if stopping.load(Ordering::SeqCst) {
@@ -50,21 +53,29 @@ impl RejectProvider {
                 }
                 assert!(length > 0, "expected a bounded Responses request body");
                 std::io::copy(&mut reader.take(length), &mut std::io::sink()).unwrap();
-                let body = r#"{"error":{"message":"intentional WT compatibility rejection","type":"invalid_request_error","code":"wt_ci_rejection"}}"#;
-                write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
                 seen.fetch_add(1, Ordering::SeqCst);
+                while holding.load(Ordering::SeqCst) && !stopping.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                let body = r#"{"error":{"message":"intentional WT compatibility rejection","type":"invalid_request_error","code":"wt_ci_rejection"}}"#;
+                let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
             }
         });
         Self {
             address,
             requests,
             stop,
+            hold,
             worker: Some(worker),
         }
     }
 
     pub fn requests(&self) -> usize {
         self.requests.load(Ordering::SeqCst)
+    }
+
+    pub fn hold(&self, value: bool) {
+        self.hold.store(value, Ordering::SeqCst);
     }
 
     pub fn config(&self) -> String {

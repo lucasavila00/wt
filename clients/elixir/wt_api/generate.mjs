@@ -29,6 +29,8 @@ const publicTypes = [
   "InspectCodexRequest",
   "ResumeCodexRequest",
   "SendCodexMessageRequest",
+  "SteerCodexRequest",
+  "InterruptCodexRequest",
   "ReadWorldMailRequest",
   "SshAccess",
   "World",

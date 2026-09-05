@@ -42,9 +42,13 @@ enum Command {
     /// Resume a persisted Codex thread and reopen its visible window if needed.
     #[command(hide = true)]
     RuntimeResume { thread_id: String },
-    /// Steer an active turn or start the next turn.
+    /// Start the next turn; reject a busy thread without steering it.
     #[command(hide = true)]
     RuntimeSend { thread_id: String },
+    #[command(hide = true)]
+    RuntimeSteer { thread_id: String, turn_id: String },
+    #[command(hide = true)]
+    RuntimeInterrupt { thread_id: String, turn_id: String },
     /// Reconcile tracked Codex threads and retry durable completion deliveries.
     #[command(hide = true)]
     WatchTurns,
@@ -85,6 +89,16 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
             print_json(&runtime::send(&thread_id, &message)?)?;
         }
         Command::WatchTurns => tracking::watch()?,
+        Command::RuntimeSteer { thread_id, turn_id } => {
+            print_json(&runtime::control_turn(
+                &thread_id,
+                &turn_id,
+                Some(&read_stdin()?),
+            )?)?;
+        }
+        Command::RuntimeInterrupt { thread_id, turn_id } => {
+            print_json(&runtime::control_turn(&thread_id, &turn_id, None)?)?;
+        }
     }
     Ok(())
 }

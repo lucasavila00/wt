@@ -78,6 +78,17 @@ and mail. This protection has the API's existing 30-day request-retention window
 The controller retains its durable association between its task or sub-session and the Codex
 thread ID. The WT registry stores world resources and mailbox entries.
 
+## Explicit turn control
+
+`send_codex_message` starts a follow-up only when there is no active turn. A busy thread
+returns a retryable conflict before submission; it never implicitly steers. Controllers such
+as APR own their durable FIFO queue, rather than duplicating scheduling inside each guest.
+`steer_codex` requires the expected active `turn_id`; a stale target fails without starting
+replacement work. `interrupt_codex` also targets a turn and returns `interrupt_requested`.
+This is acknowledgment of the request, not terminal completion: wait for the normal mailbox
+result or inspect the thread. Interrupt does not cancel a controller's queued follow-ups.
+Both controls retain normal world ownership checks and mutation replay protection.
+
 ## Completion and mailbox delivery
 
 Before submitting work, WT atomically registers the thread in its guest-local durable tracking

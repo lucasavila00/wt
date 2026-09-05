@@ -59,6 +59,15 @@ pub trait WorldWorker: Clone + Send + Sync + 'static {
     ) -> Result<CodexSend, WorkerError> {
         Err(WorkerError::new("Codex is not supported by this worker"))
     }
+    fn control_codex_turn(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+        _turn_id: &str,
+        _message: Option<&str>,
+    ) -> Result<CodexSend, WorkerError> {
+        Err(WorkerError::new("Codex is not supported by this worker"))
+    }
     fn provision(
         &self,
         spec: WorldProvisionSpec<'_>,

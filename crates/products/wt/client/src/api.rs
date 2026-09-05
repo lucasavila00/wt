@@ -24,6 +24,8 @@ impl Request {
             | Self::InspectCodex { api_version, .. }
             | Self::ResumeCodex { api_version, .. }
             | Self::SendCodexMessage { api_version, .. }
+            | Self::SteerCodex { api_version, .. }
+            | Self::InterruptCodex { api_version, .. }
             | Self::ReadWorldMail { api_version, .. } => *api_version,
         }
     }
@@ -36,6 +38,8 @@ impl Request {
             | Self::InspectCodex { request_id, .. }
             | Self::ResumeCodex { request_id, .. }
             | Self::SendCodexMessage { request_id, .. }
+            | Self::SteerCodex { request_id, .. }
+            | Self::InterruptCodex { request_id, .. }
             | Self::ReadWorldMail { request_id, .. } => request_id,
         }
     }
@@ -60,6 +64,12 @@ impl Request {
             | Self::SendCodexMessage {
                 expected_server_id, ..
             }
+            | Self::SteerCodex {
+                expected_server_id, ..
+            }
+            | Self::InterruptCodex {
+                expected_server_id, ..
+            }
             | Self::ReadWorldMail {
                 expected_server_id, ..
             } => expected_server_id.as_deref(),
@@ -82,6 +92,9 @@ impl From<wt_control_protocol::CodexMessageDelivery> for ApiCodexMessageDelivery
         match delivery {
             wt_control_protocol::CodexMessageDelivery::Steered => Self::Steered,
             wt_control_protocol::CodexMessageDelivery::Started => Self::Started,
+            wt_control_protocol::CodexMessageDelivery::InterruptRequested => {
+                Self::InterruptRequested
+            }
         }
     }
 }
@@ -329,6 +342,40 @@ fn request_to_operation(request: Request) -> std::result::Result<(String, Operat
                     .map_err(|_| "invalid world ID".to_owned())?,
                 thread_id,
                 message,
+            },
+        )),
+        Request::SteerCodex {
+            context,
+            world_id,
+            thread_id,
+            turn_id,
+            message,
+            ..
+        } => Ok((
+            context,
+            Operation::SteerCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+                turn_id,
+                message,
+            },
+        )),
+        Request::InterruptCodex {
+            context,
+            world_id,
+            thread_id,
+            turn_id,
+            ..
+        } => Ok((
+            context,
+            Operation::InterruptCodex {
+                world_id: world_id
+                    .parse()
+                    .map_err(|_| "invalid world ID".to_owned())?,
+                thread_id,
+                turn_id,
             },
         )),
         Request::ReadWorldMail {

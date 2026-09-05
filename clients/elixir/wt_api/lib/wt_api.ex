@@ -88,6 +88,26 @@ defmodule WtApi do
     )
   end
 
+  def steer_codex(request), do: steer_codex(Client.new(), request)
+
+  def steer_codex(client, %Request.SteerCodex{} = request) do
+    call(client, request, Result.SendCodexMessage, fn result ->
+      with :ok <- equal_identity(result.thread_id, request.thread_id, "thread ID"),
+           :ok <- equal_identity(result.turn_id, request.turn_id, "turn ID"),
+           do: :ok
+    end)
+  end
+
+  def interrupt_codex(request), do: interrupt_codex(Client.new(), request)
+
+  def interrupt_codex(client, %Request.InterruptCodex{} = request) do
+    call(client, request, Result.SendCodexMessage, fn result ->
+      with :ok <- equal_identity(result.thread_id, request.thread_id, "thread ID"),
+           :ok <- equal_identity(result.turn_id, request.turn_id, "turn ID"),
+           do: :ok
+    end)
+  end
+
   @spec read_world_mail(Request.ReadWorldMail.t()) ::
           {:ok, Success.t(Result.ReadWorldMail.t())} | {:error, error()}
   def read_world_mail(request), do: read_world_mail(Client.new(), request)

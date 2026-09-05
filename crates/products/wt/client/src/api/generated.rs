@@ -38,6 +38,17 @@ pub(super) enum Request {
         thread_id: String,
         world_id: String,
     },
+    #[serde(rename = "interrupt_codex")]
+    InterruptCodex {
+        api_version: u32,
+        context: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_server_id: Option<String>,
+        request_id: String,
+        thread_id: String,
+        turn_id: String,
+        world_id: String,
+    },
     #[serde(rename = "read_world_mail")]
     ReadWorldMail {
         after_message_id: u64,
@@ -78,6 +89,18 @@ pub(super) enum Request {
         expected_server_id: Option<String>,
         message: String,
         request_id: String,
+        world_id: String,
+    },
+    #[serde(rename = "steer_codex")]
+    SteerCodex {
+        api_version: u32,
+        context: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_server_id: Option<String>,
+        message: String,
+        request_id: String,
+        thread_id: String,
+        turn_id: String,
         world_id: String,
     },
 }
@@ -177,6 +200,7 @@ pub(super) enum ApiCodexStatus {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum ApiCodexMessageDelivery {
+    InterruptRequested,
     Started,
     Steered,
 }

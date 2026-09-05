@@ -81,6 +81,29 @@ export type ReadWorldMailRequest = {
   limit: UInt32;
 };
 
+export type SteerCodexRequest = {
+  api_version: 1;
+  request_id: Uuid;
+  expected_server_id?: Uuid;
+  context: string;
+  operation: "steer_codex";
+  world_id: Uuid;
+  thread_id: string;
+  turn_id: string;
+  message: string;
+};
+
+export type InterruptCodexRequest = {
+  api_version: 1;
+  request_id: Uuid;
+  expected_server_id?: Uuid;
+  context: string;
+  operation: "interrupt_codex";
+  world_id: Uuid;
+  thread_id: string;
+  turn_id: string;
+};
+
 export type Request =
   | CreateWorldRequest
   | DeleteWorldRequest
@@ -88,6 +111,8 @@ export type Request =
   | InspectCodexRequest
   | ResumeCodexRequest
   | SendCodexMessageRequest
+  | SteerCodexRequest
+  | InterruptCodexRequest
   | ReadWorldMailRequest;
 
 export type SshAccess = {
@@ -143,7 +168,7 @@ export type InspectCodexResult = {
 export type SendCodexMessageResult = {
   thread_id: string;
   turn_id: string;
-  delivery: "steered" | "started";
+  delivery: "steered" | "started" | "interrupt_requested";
 };
 
 export type ReadWorldMailResult = {

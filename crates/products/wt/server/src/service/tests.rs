@@ -65,7 +65,24 @@ impl WorldWorker for UnusedWorker {
         }
         Ok(wt_guest::CodexSend {
             turn_id: "turn-789".into(),
-            delivery: wt_guest::CodexMessageDelivery::Steered,
+            delivery: wt_guest::CodexMessageDelivery::Started,
+        })
+    }
+
+    fn control_codex_turn(
+        &self,
+        _world_id: WorldId,
+        _thread_id: &str,
+        turn_id: &str,
+        message: Option<&str>,
+    ) -> Result<wt_guest::CodexSend, WorkerError> {
+        Ok(wt_guest::CodexSend {
+            turn_id: turn_id.into(),
+            delivery: if message.is_some() {
+                wt_guest::CodexMessageDelivery::Steered
+            } else {
+                wt_guest::CodexMessageDelivery::InterruptRequested
+            },
         })
     }
 
@@ -371,14 +388,48 @@ fn api_controls_an_ephemeral_codex_session() {
         },
         &mut std::io::sink(),
     );
-    assert!(matches!(
-        sent.outcome,
-        Outcome::Ok { response }
-            if matches!(*response, Response::CodexMessageSent {
-                delivery: wt_control_protocol::CodexMessageDelivery::Steered,
-                ..
-            })
-    ));
+    assert!(
+        matches!(sent.outcome, Outcome::Error { error } if error.code == ErrorCode::Conflict && error.retryable)
+    );
+    for operation in [
+        Operation::SteerCodex {
+            world_id,
+            thread_id: "thread-123".into(),
+            turn_id: "turn-456".into(),
+            message: "focus".into(),
+        },
+        Operation::InterruptCodex {
+            world_id,
+            thread_id: "thread-123".into(),
+            turn_id: "turn-456".into(),
+        },
+    ] {
+        let id = uuid::Uuid::new_v4();
+        let hash = "f".repeat(64);
+        let result = service.execute_api_mutation(
+            "owner",
+            id,
+            Some(&hash),
+            None,
+            operation.clone(),
+            &mut std::io::sink(),
+        );
+        assert!(
+            matches!(&result.outcome, Outcome::Ok { response } if matches!(**response, Response::CodexMessageSent { ref turn_id, .. } if turn_id == "turn-456"))
+        );
+        let replay = service.execute_api_mutation(
+            "owner",
+            id,
+            Some(&hash),
+            None,
+            operation,
+            &mut std::io::sink(),
+        );
+        assert_eq!(
+            serde_json::to_value(result).unwrap(),
+            serde_json::to_value(replay).unwrap()
+        );
+    }
     assert!(service
         .store
         .list_world_mail("owner", world_id, 0, 10)

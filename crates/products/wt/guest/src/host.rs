@@ -128,6 +128,28 @@ impl<P: MachineProvider> Worker<P> {
 }
 
 impl<P: MachineProvider> crate::WorldWorker for Worker<P> {
+    fn control_codex_turn(
+        &self,
+        world_id: WorldId,
+        thread_id: &str,
+        turn_id: &str,
+        message: Option<&str>,
+    ) -> Result<CodexSend, WorkerError> {
+        self.run_codex_runtime(
+            world_id,
+            &[
+                if message.is_some() {
+                    "runtime-steer"
+                } else {
+                    "runtime-interrupt"
+                },
+                thread_id,
+                turn_id,
+            ],
+            message.map(str::as_bytes),
+        )
+    }
+
     fn start_codex(&self, world_id: WorldId, message: &str) -> Result<CodexStart, WorkerError> {
         Self::start_codex(self, world_id, message)
     }

@@ -49,6 +49,7 @@ pub(crate) struct SendOutput {
 pub(crate) enum MessageDelivery {
     Steered,
     Started,
+    InterruptRequested,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -110,6 +111,49 @@ pub(crate) fn send(thread_id: &str, message: &str) -> Result<SendOutput> {
     Ok(output)
 }
 
+pub(crate) fn control_turn(
+    thread_id: &str,
+    turn_id: &str,
+    message: Option<&str>,
+) -> Result<SendOutput> {
+    let mut rpc = Connection::open()?;
+    crate::tracking::register(&mut rpc, thread_id)?;
+    control_turn_rpc(&mut rpc, thread_id, turn_id, message)
+}
+
+fn control_turn_rpc(
+    rpc: &mut impl Rpc,
+    thread_id: &str,
+    turn_id: &str,
+    message: Option<&str>,
+) -> Result<SendOutput> {
+    if turn_id.is_empty() {
+        bail!("turn ID must not be empty");
+    }
+    if let Some(message) = message {
+        let result = rpc.call(
+            "turn/steer",
+            json!({
+                "threadId": thread_id, "expectedTurnId": turn_id,
+                "input": [{"type":"text", "text":message}]
+            }),
+        )?;
+        Ok(SendOutput {
+            turn_id: required_string(&result, "/turnId", "steered turn ID")?,
+            delivery: MessageDelivery::Steered,
+        })
+    } else {
+        rpc.call(
+            "turn/interrupt",
+            json!({"threadId":thread_id, "turnId":turn_id}),
+        )?;
+        Ok(SendOutput {
+            turn_id: turn_id.into(),
+            delivery: MessageDelivery::InterruptRequested,
+        })
+    }
+}
+
 fn optional_pane(result: Result<Pane>) -> Option<Pane> {
     result
         .map_err(|error| eprintln!("WT Codex presentation unavailable: {error:#}"))
@@ -148,19 +192,8 @@ fn inspect_thread(rpc: &mut impl Rpc, thread_id: &str) -> Result<ThreadState> {
 fn send_message(rpc: &mut impl Rpc, thread_id: &str, message: &str) -> Result<SendOutput> {
     let state = inspect_thread(rpc, thread_id)?;
     match (state.status, state.active_turn_id) {
-        (RuntimeStatus::Active, Some(turn_id)) => {
-            let result = rpc.call(
-                "turn/steer",
-                json!({
-                    "threadId": thread_id,
-                    "expectedTurnId": turn_id,
-                    "input": [{ "type": "text", "text": message }]
-                }),
-            )?;
-            Ok(SendOutput {
-                turn_id: required_string(&result, "/turnId", "turn/steer turn ID")?,
-                delivery: MessageDelivery::Steered,
-            })
+        (RuntimeStatus::Active, Some(_)) => {
+            bail!("Codex thread is busy; queue a follow-up or explicitly steer its turn")
         }
         (RuntimeStatus::Idle | RuntimeStatus::Error, _) => {
             rpc.call("thread/resume", json!({ "threadId": thread_id }))?;
@@ -394,23 +427,15 @@ mod tests {
     }
 
     #[test]
-    fn active_send_steers_the_current_turn() {
+    fn active_send_does_not_implicitly_steer() {
         let mut rpc = FakeRpc {
-            replies: VecDeque::from([
-                (
-                    "thread/read",
-                    json!({ "thread": { "status": { "type": "active", "activeFlags": [] }, "turns": [{ "id": "turn-1", "status": "inProgress" }] } }),
-                ),
-                ("turn/steer", json!({ "turnId": "turn-1" })),
-            ]),
+            replies: VecDeque::from([(
+                "thread/read",
+                json!({ "thread": { "status": { "type": "active", "activeFlags": [] }, "turns": [{ "id": "turn-1", "status": "inProgress" }] } }),
+            )]),
         };
-        assert_eq!(
-            send_message(&mut rpc, "thread-1", "more").unwrap(),
-            SendOutput {
-                turn_id: "turn-1".into(),
-                delivery: MessageDelivery::Steered,
-            }
-        );
+        assert!(send_message(&mut rpc, "thread-1", "more").is_err());
+        assert!(rpc.replies.is_empty());
     }
 
     #[test]

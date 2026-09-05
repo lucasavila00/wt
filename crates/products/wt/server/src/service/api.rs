@@ -65,6 +65,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 | Operation::StartCodex { .. }
                 | Operation::ResumeCodex { .. }
                 | Operation::SendCodexMessage { .. }
+                | Operation::SteerCodex { .. }
+                | Operation::InterruptCodex { .. }
         ) {
             return ApiResponse::error(ApiError::new(
                 ErrorCode::InvalidRequest,
@@ -90,6 +92,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
                 Operation::StartCodex { .. }
                     | Operation::ResumeCodex { .. }
                     | Operation::SendCodexMessage { .. }
+                    | Operation::SteerCodex { .. }
+                    | Operation::InterruptCodex { .. }
             ),
         ) {
             Ok(wt_workload_registry::ApiMutationStart::Replay {
@@ -153,6 +157,8 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             Operation::StartCodex { .. }
                 | Operation::ResumeCodex { .. }
                 | Operation::SendCodexMessage { .. }
+                | Operation::SteerCodex { .. }
+                | Operation::InterruptCodex { .. }
         );
         let result = self.execute_with_progress(owner, operation, progress);
         let outcome = match result {

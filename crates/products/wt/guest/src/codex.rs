@@ -37,4 +37,5 @@ pub struct CodexSend {
 pub enum CodexMessageDelivery {
     Steered,
     Started,
+    InterruptRequested,
 }

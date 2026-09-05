@@ -96,6 +96,19 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             .try_lock_world(world_id)
             .ok_or_else(active_operation)?;
         self.require_running_world(owner, world_id)?;
+        if self
+            .worker
+            .inspect_codex(world_id, thread_id)
+            .map_err(worker_error)?
+            .status
+            == CodexRuntimeStatus::Active
+        {
+            return Err(ApiError::new(
+                ErrorCode::Conflict,
+                "Codex thread is busy; queue a follow-up or explicitly steer its turn",
+            )
+            .retryable());
+        }
         let sent = self
             .worker
             .send_codex_message(world_id, thread_id, message)
@@ -106,6 +119,47 @@ impl<W: WorldWorker, G: AgentToolGateway> Service<W, G> {
             delivery: match sent.delivery {
                 wt_guest::CodexMessageDelivery::Steered => CodexMessageDelivery::Steered,
                 wt_guest::CodexMessageDelivery::Started => CodexMessageDelivery::Started,
+                wt_guest::CodexMessageDelivery::InterruptRequested => {
+                    CodexMessageDelivery::InterruptRequested
+                }
+            },
+        })
+    }
+
+    pub(super) fn control_codex_turn(
+        &self,
+        owner: &str,
+        world_id: WorldId,
+        thread_id: &str,
+        turn_id: &str,
+        message: Option<&str>,
+    ) -> Result<Response, ApiError> {
+        validate_thread_id(thread_id)?;
+        if turn_id.is_empty() {
+            return Err(ApiError::new(
+                ErrorCode::InvalidRequest,
+                "turn ID must not be empty",
+            ));
+        }
+        if let Some(message) = message {
+            validate_message(message)?;
+        }
+        let _operation = self
+            .operations
+            .try_lock_world(world_id)
+            .ok_or_else(active_operation)?;
+        self.require_running_world(owner, world_id)?;
+        let sent = self
+            .worker
+            .control_codex_turn(world_id, thread_id, turn_id, message)
+            .map_err(worker_error)?;
+        Ok(Response::CodexMessageSent {
+            thread_id: thread_id.into(),
+            turn_id: sent.turn_id,
+            delivery: if message.is_some() {
+                CodexMessageDelivery::Steered
+            } else {
+                CodexMessageDelivery::InterruptRequested
             },
         })
     }

@@ -50,6 +50,10 @@ impl Runtime {
                         let response =
                             if request.pointer("/params/threadId").and_then(Value::as_str)
                                 == Some("missing")
+                                || request
+                                    .pointer("/params/expectedTurnId")
+                                    .and_then(Value::as_str)
+                                    == Some("stale")
                             {
                                 json!({"id": id, "error": {"message": "thread not found"}})
                             } else {
@@ -62,6 +66,10 @@ impl Runtime {
                                         "id": "thread-1", "status": {"type": "idle"}, "turns": []
                                     }}),
                                     "turn/start" => json!({"turn": {"id": "turn-2"}}),
+                                    "turn/steer" => {
+                                        json!({"turnId": request["params"]["expectedTurnId"]})
+                                    }
+                                    "turn/interrupt" => json!({}),
                                     other => panic!("unexpected RPC {other}"),
                                 };
                                 json!({"id": id, "result": result})
@@ -140,6 +148,66 @@ impl Runtime {
         );
         serde_json::from_slice(&output.stdout).unwrap()
     }
+}
+
+#[test]
+fn explicit_controls_target_a_turn_without_a_pane_or_implicit_new_turn() {
+    let runtime = Runtime::new();
+    for (operation, turn_id, message, success) in [
+        ("runtime-steer", "turn-2", Some("focus on tests"), true),
+        ("runtime-interrupt", "turn-2", None, true),
+        (
+            "runtime-steer",
+            "stale",
+            Some("must not start another turn"),
+            false,
+        ),
+    ] {
+        let mut child = runtime
+            .command(env!("CARGO_BIN_EXE_wt-codex-integration"))
+            .args([operation, "thread-1", turn_id])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        if let Some(message) = message {
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(message.as_bytes())
+                .unwrap();
+        }
+        let output = child.wait_with_output().unwrap();
+        assert_eq!(
+            output.status.success(),
+            success,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if success {
+            let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(result["turn_id"], turn_id);
+            assert_eq!(
+                result["delivery"],
+                if message.is_some() {
+                    "steered"
+                } else {
+                    "interrupt_requested"
+                }
+            );
+        }
+    }
+    let requests = runtime.requests.lock().unwrap();
+    assert!(!requests.iter().any(|request| matches!(
+        request["method"].as_str(),
+        Some("turn/start" | "thread/resume")
+    )));
+    assert!(requests
+        .iter()
+        .any(|request| request["method"] == "turn/interrupt"
+            && request["params"]["turnId"] == "turn-2"));
 }
 
 #[test]

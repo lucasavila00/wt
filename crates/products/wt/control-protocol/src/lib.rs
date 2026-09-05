@@ -139,6 +139,8 @@ pub enum Operation {
     InspectCodex { world_id: WorldId, thread_id: String },
     ResumeCodex { world_id: WorldId, thread_id: String },
     SendCodexMessage { world_id: WorldId, thread_id: String, message: String },
+    SteerCodex { world_id: WorldId, thread_id: String, turn_id: String, message: String },
+    InterruptCodex { world_id: WorldId, thread_id: String, turn_id: String },
     ListAgentToolReports,
     ClearAgentToolReports,
     ListWorldMail { world_id: WorldId, after_id: u64, limit: u32 },

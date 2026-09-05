@@ -13,4 +13,5 @@ pub enum CodexStatus {
 pub enum CodexMessageDelivery {
     Steered,
     Started,
+    InterruptRequested,
 }
