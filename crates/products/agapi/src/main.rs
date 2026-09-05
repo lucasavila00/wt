@@ -99,7 +99,7 @@ fn serve(state: PathBuf, codex: PathBuf, workspace: PathBuf) -> Result<()> {
         .context("agapi is already serving this state directory")?;
     if let Ok(existing) = fs::read_to_string(state.join("workspace")) {
         ensure!(
-            PathBuf::from(existing) == workspace,
+            std::path::Path::new(&existing) == workspace,
             "state directory belongs to a different workspace"
         );
     }

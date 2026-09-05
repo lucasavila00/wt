@@ -119,7 +119,10 @@ fn real_codex_submission_replay_outbox_ack_and_restart() {
     let result = request(root.path(), input.clone());
     assert_eq!(result["outcome"], "ok", "{result}");
     uuid::Uuid::parse_str(result["result"]["thread_id"].as_str().unwrap()).unwrap();
-    assert_eq!(request(root.path(), input), result);
+    assert_eq!(request(root.path(), input.clone()), result);
+    let mut changed = input;
+    changed["message"] = json!("different task");
+    assert_eq!(request(root.path(), changed)["outcome"], "error");
     let events = loop {
         let events = request(root.path(), json!({"operation":"read_events","after":0}));
         if events["result"]["high_water"] == 1 {
@@ -137,6 +140,50 @@ fn real_codex_submission_replay_outbox_ack_and_restart() {
     assert_eq!(events["events"][0]["turn_id"], result["result"]["turn_id"]);
     let ack = request(root.path(), json!({"operation":"ack_events","through":1}));
     assert_eq!(ack["result"]["acknowledged"], 1);
+    let thread = &result["result"]["thread_id"];
+    let resumed = request(
+        root.path(),
+        json!({"operation":"resume_thread","thread_id":thread}),
+    );
+    assert_eq!(resumed["outcome"], "ok", "{resumed}");
+    provider.hold(true);
+    let sent = request(
+        root.path(),
+        json!({"operation":"send_message","thread_id":thread,
+        "message":"wait for explicit live control"}),
+    );
+    assert_eq!(sent["outcome"], "ok", "{sent}");
+    let turn = &sent["result"]["turn_id"];
+    assert_ne!(*turn, result["result"]["turn_id"]);
+    let stale = request(
+        root.path(),
+        json!({"operation":"steer_turn","thread_id":thread,
+        "turn_id":"unknown","message":"reject stale target"}),
+    );
+    assert_eq!(stale["outcome"], "error");
+    let steered = request(
+        root.path(),
+        json!({"operation":"steer_turn","thread_id":thread,
+        "turn_id":turn,"message":"focus on the ADR"}),
+    );
+    assert_eq!(steered["outcome"], "ok", "{steered}");
+    let interrupted = request(
+        root.path(),
+        json!({"operation":"interrupt_turn",
+        "thread_id":thread,"turn_id":turn}),
+    );
+    assert_eq!(interrupted["outcome"], "ok", "{interrupted}");
+    provider.hold(false);
+    let events = loop {
+        let page = request(root.path(), json!({"operation":"read_events","after":0}));
+        if page["result"]["high_water"] == 2 {
+            break page["result"].clone();
+        }
+        assert!(Instant::now() < deadline, "{page}");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(events["events"][1]["turn_id"], *turn);
+    assert_eq!(events["events"][1]["kind"], "failed");
     drop(server);
     let _restarted = start();
     assert_eq!(
@@ -144,7 +191,7 @@ fn real_codex_submission_replay_outbox_ack_and_restart() {
         events
     );
     assert_eq!(
-        request(root.path(), json!({"operation":"read_events","after":1}))["result"]["events"],
+        request(root.path(), json!({"operation":"read_events","after":2}))["result"]["events"],
         json!([])
     );
 }
