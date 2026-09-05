@@ -411,7 +411,7 @@ fn api_controls_an_ephemeral_codex_session() {
             id,
             Some(&hash),
             None,
-            operation.clone(),
+            serde_json::from_value(serde_json::to_value(&operation).unwrap()).unwrap(),
             &mut std::io::sink(),
         );
         assert!(

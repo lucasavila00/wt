@@ -25,8 +25,8 @@ WT exposes four runtime operations through ADR 0085:
   accepted.
 - **Inspect** reads the App Server thread state and returns its active turn together with the
   optional current pane metadata and captured screen.
-- **Send** uses App Server's semantic protocol. It steers the active turn when one is running and
-  starts a new turn in the same Codex thread when the session is idle or its prior turn failed.
+- **Send** starts a new turn in the same Codex thread when it is idle or its prior turn failed,
+  and rejects a busy thread without steering it.
   A retained `systemError` status does not prohibit an explicit new message; Codex validates it.
 - **Resume** loads a retained thread and attempts to restore its window without submitting work.
 
